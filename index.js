@@ -13,6 +13,8 @@ const LINES = [
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 app.get("/", (req, res) => res.type("text/plain").send("OK"));
+app.get("/healthz", (req, res) => res.type("text/plain").send("OK"));
+app.head("/healthz", (req, res) => res.status(200).end());
 
 app.get("/followup", async (req, res) => {
   const user = (req.query.user || "").toString();
