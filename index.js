@@ -26,7 +26,7 @@ app.get("/followup", async (req, res) => {
 
   await sleep(delayMs);
   const line = LINES[Math.floor(Math.random() * LINES.length)];
-  res.type("text/plain").send(`Bartender to ${user}: ${line}`);
+  res.type("text/plain").send(line);
 });
 
 const PORT = process.env.PORT || 3000;
