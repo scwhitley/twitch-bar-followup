@@ -12,26 +12,20 @@ const LINES = [
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-app.get("/followup", async (req, res) => {
-  // if no ?user= in URL, just return 400 or empty string
-  if (!req.query.user) {
-    return res
-      .status(400)
-      .type("text/plain")
-      .send("Missing ?user= parameter");
-  }
+app.get("/", (req, res) => res.type("text/plain").send("OK"));
 
-  const user = req.query.user.toString();
+app.get("/followup", async (req, res) => {
+  const user = (req.query.user || "").toString();
   const delayMs = Math.min(parseInt(req.query.delayMs || "2500", 10) || 2500, 4500);
 
-  // Optional shared key check
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
 
   await sleep(delayMs);
   const line = LINES[Math.floor(Math.random() * LINES.length)];
-  res.type("text/plain").send(`Bartender to ${user}: ${line}`);
+  const msg = user ? `Bartender to ${user}: ${line}` : line; // no 400s
+  res.type("text/plain").send(msg);
 });
 
 const PORT = process.env.PORT || 3000;
