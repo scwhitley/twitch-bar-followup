@@ -59,11 +59,10 @@ app.get("/followup", async (req, res) => {
 
 // NEW complaint endpoint Nightbot uses for !barcomplaint
 app.get("/complaint", async (req, res) => {
-  if (!req.query.user) {
-    return res.status(400).type("text/plain").send("Missing ?user= parameter");
-  }
+  // bare=1 → return only the comeback line (no "Bartender to ...")
+  const bare = req.query.bare === "1";
 
-  const user = req.query.user.toString();
+  const user  = (req.query.user  || "").toString();
   const issue = decodeURIComponent((req.query.issue || "").toString()).slice(0, 120);
   const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 4500);
 
@@ -73,9 +72,19 @@ app.get("/complaint", async (req, res) => {
 
   await sleep(delayMs);
   const pick = COMPLAINTS[Math.floor(Math.random() * COMPLAINTS.length)];
-  const msg = pick(user, issue);
-  res.type("text/plain").send(msg);
+  const line = pick(user || "guest", issue);
+
+  // If bare mode, strip the "Bartender to <user>: " prefix
+  if (bare) {
+    // remove leading 'Bartender to <name>: ' if present
+    const stripped = line.replace(/^Bartender to .*?:\s*/, "");
+    return res.type("text/plain").send(stripped);
+  }
+
+  // Normal mode returns full message
+  return res.type("text/plain").send(line);
 });
+
 
 // Start the server
 const PORT = process.env.PORT || 3000;
