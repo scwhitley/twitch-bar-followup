@@ -91,6 +91,22 @@ function getTodaysSpecial() {
   return { date: key, drink: DRINK_KEYS[idx] };
 }
 
+function awardAndLogLater(user, drink, date, amount) {
+  // fire-and-forget so the HTTP response is fast
+  setImmediate(async () => {
+    try {
+      const awarded = await seAddPoints(user, amount);
+      logSpecialAward({
+        user, drink, amount, date,
+        time: new Date().toISOString(),
+        awarded
+      });
+    } catch (e) {
+      // swallow errors; don't crash server
+    }
+  });
+}
+
 
 // ---------------- Quip pools ----------------
 const LINES = [
