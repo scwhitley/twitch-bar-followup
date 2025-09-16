@@ -60,8 +60,20 @@ const CHEERS = [
   (user) => `Bartender to ${user}: “Thanks fam. Tip jar smiles upon you.”`
 ];
 
-// ---------------- State: fired counter & per-user drink counts ----------------
+// Short, silly fight lines
+const FIGHTS = [
+  (user) => `A bar brawl sparks near ${user}! The jukebox switches to boss music.`,
+  (user) => `Two patrons square up by ${user}. Bartender rolls initiative.`,
+  (user) => `Coasters fly past ${user}. Someone yelled, “Nerf the bartender!”`,
+  (user) => `Security droids beep angrily as a scuffle starts near ${user}.`,
+  (user) => `Barstool scraped. Gloves off. ${user} has front-row seats.`
+];
+
+// ---------------- State: fired counter, drink counters, session totals ----------------
 let firedCount = 0;
+let cheersCount = 0;
+let drinksServedCount = 0;
+let fightsCount = 0;
 
 const drinkCounts = new Map(); // key: username (lowercase), value: count tonight
 const keyUser = (u) => String(u || "").trim().toLowerCase();
@@ -83,8 +95,7 @@ app.get("/followup", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
   const drink = (req.query.drink || "").toString().slice(0, 40);
-  const delayMs =
-    Math.min(parseInt(req.query.delayMs || "2500", 10) || 2500, 4500);
+  const delayMs = Math.min(parseInt(req.query.delayMs || "2500", 10) || 2500, 4500);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -106,10 +117,11 @@ app.get("/followup", async (req, res) => {
 
   let line = withDrink(drink, base);
 
-  // NEW: per-user drink counting + milestones
+  // per-user drink counting + milestones
   let tail = "";
   if (user && drink) {
     const count = bumpDrinkCount(user);
+    drinksServedCount += 1; // <--- NEW total drinks
     tail = ` That’s drink #${count} tonight.`;
     if (count === 3) tail += " Remember to hydrate. 💧";
     if (count === 5) tail += " Easy there, champion. 🛑 Hydration check!";
@@ -125,8 +137,7 @@ app.get("/complaint", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
   const issue = (req.query.issue || "").toString().slice(0, 120);
-  const delayMs =
-    Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 4500);
+  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 4500);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -144,8 +155,7 @@ app.get("/complaint", async (req, res) => {
 // ---------------- FIRE PACK (for !fire) ----------------
 app.get("/firepack", async (req, res) => {
   const user = (req.query.user || "").toString();
-  const delayMs =
-    Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
+  const delayMs = Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -164,8 +174,7 @@ app.get("/firepack", async (req, res) => {
 app.get("/cheers", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
-  const delayMs =
-    Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 4500);
+  const delayMs = Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 4500);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -173,6 +182,7 @@ app.get("/cheers", async (req, res) => {
 
   await sleep(delayMs);
   const full = sample(CHEERS)(user || "friend");
+  cheersCount += 1; // <--- NEW total cheers
   if (bare) {
     const stripped = full.replace(/^Bartender to .*?:\s*/, "");
     return res.type("text/plain").send(stripped);
@@ -180,11 +190,25 @@ app.get("/cheers", async (req, res) => {
   return res.type("text/plain").send(full);
 });
 
-// ---------------- Utility: counters ----------------
+// ---------------- FIGHT (for !fight) ----------------
+// If you want the command to live in StreamElements only, you can still call this URL from SE using its $(urlfetch) in the command message.
+app.get("/fight", async (req, res) => {
+  const user = (req.query.user || "").toString();
+  const delayMs = Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 4500);
+
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+
+  await sleep(delayMs);
+  fightsCount += 1; // <--- NEW total fights
+  const line = sample(FIGHTS)(user || "the Realm");
+  return res.type("text/plain").send(line);
+});
+
+// ---------------- Utility: counters + summaries ----------------
 app.get("/firedcount", (_req, res) => {
-  return res
-    .type("text/plain")
-    .send(`Bartenders fired so far: ${firedCount}`);
+  return res.type("text/plain").send(`Bartenders fired so far: ${firedCount}`);
 });
 
 // GET /drinks?user=<name> -> "<name> has N drinks tonight."
@@ -193,9 +217,18 @@ app.get("/drinks", (req, res) => {
   const k = keyUser(user);
   const n = k ? drinkCounts.get(k) || 0 : 0;
   const who = user || "Guest";
-  res
-    .type("text/plain")
-    .send(`${who} has ${n} drink${n === 1 ? "" : "s"} tonight.`);
+  res.type("text/plain").send(`${who} has ${n} drink${n === 1 ? "" : "s"} tonight.`);
+});
+
+// Session summary (for !end)
+app.get("/end", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  const summary =
+    `Session Summary: Bartenders fired: ${firedCount} | Drinks served: ${drinksServedCount} | ` +
+    `Cheers given: ${cheersCount} | Fights broke out: ${fightsCount}`;
+  res.type("text/plain").send(summary);
 });
 
 // Admin: reset per-user or all drink counters
@@ -222,6 +255,19 @@ app.get("/resetfired", (req, res) => {
   }
   firedCount = 0;
   res.type("text/plain").send("Fired counter reset to 0");
+});
+
+// Admin: reset everything (session totals + per-user map)
+app.get("/resetall", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  firedCount = 0;
+  cheersCount = 0;
+  drinksServedCount = 0;
+  fightsCount = 0;
+  drinkCounts.clear();
+  res.type("text/plain").send("All counters reset.");
 });
 
 // ---------------- Start server ----------------
