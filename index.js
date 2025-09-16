@@ -60,19 +60,10 @@ const CHEERS = [
   (user) => `Bartender to ${user}: “Thanks fam. Tip jar smiles upon you.”`
 ];
 
-// Short, silly fight lines
-const FIGHTS = [
-  (user) => `A bar brawl sparks near ${user}! The jukebox switches to boss music.`,
-  (user) => `Two patrons square up by ${user}. Bartender rolls initiative.`,
-  (user) => `Coasters fly past ${user}. Someone yelled, “Nerf the bartender!”`,
-  (user) => `Security droids beep angrily as a scuffle starts near ${user}.`,
-  (user) => `Barstool scraped. Gloves off. ${user} has front-row seats.`
-];
-
-// ---------------- State: fired counter, drink counters, session totals ----------------
+// ---------------- State: fired counter, per-user drinks, and session totals ----------------
 let firedCount = 0;
-let cheersCount = 0;
 let drinksServedCount = 0;
+let cheersCount = 0;
 let fightsCount = 0;
 
 const drinkCounts = new Map(); // key: username (lowercase), value: count tonight
@@ -90,12 +81,13 @@ app.get("/", (_req, res) => res.type("text/plain").send("OK"));
 app.get("/healthz", (_req, res) => res.type("text/plain").send("OK"));
 
 // ---------------- FOLLOWUP (Nightbot uses for each drink) ----------------
-// Accepts: bare=1, user=<name>, drink=<slug>, delayMs, key=<shared>
+// Query: bare=1, user=<name>, drink=<slug>, delayMs, key=<shared>
 app.get("/followup", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
   const drink = (req.query.drink || "").toString().slice(0, 40);
-  const delayMs = Math.min(parseInt(req.query.delayMs || "2500", 10) || 2500, 4500);
+  const delayMs =
+    Math.min(parseInt(req.query.delayMs || "2500", 10) || 2500, 4500);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -107,8 +99,6 @@ app.get("/followup", async (req, res) => {
   await sleep(delayMs);
 
   const base = sample(LINES);
-
-  // flavor ~30% of the time with the drink label if present
   const withDrink = (d, line) => {
     if (!d) return line;
     const nice = d.replace(/_/g, " ");
@@ -117,11 +107,11 @@ app.get("/followup", async (req, res) => {
 
   let line = withDrink(drink, base);
 
-  // per-user drink counting + milestones
+  // per-user drink counting + session total + milestones
   let tail = "";
   if (user && drink) {
     const count = bumpDrinkCount(user);
-    drinksServedCount += 1; // <--- NEW total drinks
+    drinksServedCount += 1;           // <-- total drinks this session
     tail = ` That’s drink #${count} tonight.`;
     if (count === 3) tail += " Remember to hydrate. 💧";
     if (count === 5) tail += " Easy there, champion. 🛑 Hydration check!";
@@ -137,7 +127,8 @@ app.get("/complaint", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
   const issue = (req.query.issue || "").toString().slice(0, 120);
-  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 4500);
+  const delayMs =
+    Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 4500);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -155,7 +146,8 @@ app.get("/complaint", async (req, res) => {
 // ---------------- FIRE PACK (for !fire) ----------------
 app.get("/firepack", async (req, res) => {
   const user = (req.query.user || "").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
+  const delayMs =
+    Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -174,15 +166,16 @@ app.get("/firepack", async (req, res) => {
 app.get("/cheers", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 4500);
+  const delayMs =
+    Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 4500);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
 
   await sleep(delayMs);
+  cheersCount += 1; // track session cheers
   const full = sample(CHEERS)(user || "friend");
-  cheersCount += 1; // <--- NEW total cheers
   if (bare) {
     const stripped = full.replace(/^Bartender to .*?:\s*/, "");
     return res.type("text/plain").send(stripped);
@@ -190,25 +183,22 @@ app.get("/cheers", async (req, res) => {
   return res.type("text/plain").send(full);
 });
 
-// ---------------- FIGHT (for !fight) ----------------
-// If you want the command to live in StreamElements only, you can still call this URL from SE using its $(urlfetch) in the command message.
-app.get("/fight", async (req, res) => {
-  const user = (req.query.user || "").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 4500);
-
+// ---------------- FIGHT tracking (silent; SE-only) ----------------
+// Append this to your SE !fight / !fight2 messages with $(urlfetch ...)
+// Returns 204 No Content so nothing new prints in chat.
+app.get("/trackfight", async (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
-
-  await sleep(delayMs);
-  fightsCount += 1; // <--- NEW total fights
-  const line = sample(FIGHTS)(user || "the Realm");
-  return res.type("text/plain").send(line);
+  fightsCount += 1;
+  res.status(204).send(); // no output
 });
 
-// ---------------- Utility: counters + summaries ----------------
+// ---------------- Utility & Summary ----------------
 app.get("/firedcount", (_req, res) => {
-  return res.type("text/plain").send(`Bartenders fired so far: ${firedCount}`);
+  return res
+    .type("text/plain")
+    .send(`Bartenders fired so far: ${firedCount}`);
 });
 
 // GET /drinks?user=<name> -> "<name> has N drinks tonight."
@@ -217,17 +207,18 @@ app.get("/drinks", (req, res) => {
   const k = keyUser(user);
   const n = k ? drinkCounts.get(k) || 0 : 0;
   const who = user || "Guest";
-  res.type("text/plain").send(`${who} has ${n} drink${n === 1 ? "" : "s"} tonight.`);
+  res
+    .type("text/plain")
+    .send(`${who} has ${n} drink${n === 1 ? "" : "s"} tonight.`);
 });
 
-// Session summary (for !end)
+// End-of-stream summary
+// /end?key=SECRET
 app.get("/end", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
-  const summary =
-    `Session Summary: Bartenders fired: ${firedCount} | Drinks served: ${drinksServedCount} | ` +
-    `Cheers given: ${cheersCount} | Fights broke out: ${fightsCount}`;
+  const summary = `Session Summary: Bartenders fired: ${firedCount} | Drinks served: ${drinksServedCount} | Cheers given: ${cheersCount} | Fights broke out: ${fightsCount}`;
   res.type("text/plain").send(summary);
 });
 
@@ -257,14 +248,15 @@ app.get("/resetfired", (req, res) => {
   res.type("text/plain").send("Fired counter reset to 0");
 });
 
-// Admin: reset everything (session totals + per-user map)
+// Admin: reset EVERYTHING for a fresh session
+// /resetall?key=SECRET
 app.get("/resetall", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
   firedCount = 0;
-  cheersCount = 0;
   drinksServedCount = 0;
+  cheersCount = 0;
   fightsCount = 0;
   drinkCounts.clear();
   res.type("text/plain").send("All counters reset.");
