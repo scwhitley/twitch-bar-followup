@@ -183,16 +183,22 @@ app.get("/cheers", async (req, res) => {
   return res.type("text/plain").send(full);
 });
 
-// ---------------- FIGHT tracking (silent; SE-only) ----------------
-// Append this to your SE !fight / !fight2 messages with $(urlfetch ...)
-// Returns 204 No Content so nothing new prints in chat.
-app.get("/trackfight", async (req, res) => {
+// --- FIGHT tracking (silent; accepts multiple aliases) ---
+const trackFightHandler = (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
+  // Optional: track by type if provided (fight vs fight2)
+  // fightsByType[req.query.type || "fight"] = (fightsByType[req.query.type || "fight"] || 0) + 1;
   fightsCount += 1;
-  res.status(204).send(); // no output
-});
+  return res.status(204).send(); // no chat output
+};
+
+// Accept multiple paths so either command works
+app.get("/trackfight", trackFightHandler);
+app.get("/trackfight2", trackFightHandler);
+app.get("/track/fight", trackFightHandler);
+
 
 // ---------------- Utility & Summary ----------------
 app.get("/firedcount", (_req, res) => {
