@@ -208,6 +208,30 @@ function ensureSpecialFlagForToday() {
   return specialAward;
 }
 
+// ---- Cut-off (Uber) until midnight ET ----
+const bannedUntilMidnight = new Map(); // key: lowercased user -> dateKey (YYYY-MM-DD)
+
+function banUserUntilMidnight(user) {
+  const u = String(user || "").trim().toLowerCase();
+  if (!u) return false;
+  bannedUntilMidnight.set(u, dateKeyNY());
+  return true;
+}
+
+function isUserBanned(user) {
+  const u = String(user || "").trim().toLowerCase();
+  if (!u) return false;
+  const today = dateKeyNY();
+  const stamp = bannedUntilMidnight.get(u);
+  if (!stamp) return false;
+  // auto-expire if day rolled over
+  if (stamp !== today) {
+    bannedUntilMidnight.delete(u);
+    return false;
+  }
+  return true;
+}
+
 
 // ---------------- Health routes ----------------
 app.get("/", (_req, res) => res.type("text/plain").send("OK"));
@@ -236,6 +260,15 @@ app.get("/followup", async (req, res) => {
   }
 
   await sleep(delayMs);
+
+    // hard gate: banned users can't order until midnight ET
+  if (isUserBanned(user)) {
+    const msg = bare
+      ? "Cut off. No more drinks tonight. 🚫"
+      : `Bartender to ${user}: You’ve been cut off for the night. 🚫`;
+    return res.type("text/plain").send(msg);
+  }
+
 
   // just pick a quip — no drink tag at all
   const base = sample(LINES);
@@ -396,6 +429,45 @@ app.get("/speciallast", (req, res) => {
   }
 });
 
+// Ban a user until midnight ET (called by !uber)
+app.get("/uberban", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  const target = (req.query.target || "").toString();
+  if (!target) return res.status(400).type("text/plain").send("Missing ?target=");
+  const ok = banUserUntilMidnight(target);
+  if (!ok) return res.status(400).type("text/plain").send("Bad target");
+  return res
+    .type("text/plain")
+    .send(`${target} is cut off until midnight ET.`);
+});
+
+// Optional: unban mid-stream
+app.get("/uberunban", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  const target = (req.query.target || "").toString();
+  if (!target) return res.status(400).type("text/plain").send("Missing ?target=");
+  bannedUntilMidnight.delete(String(target).trim().toLowerCase());
+  return res.type("text/plain").send(`${target} is no longer cut off.`);
+});
+
+// Optional: list current bans (mods only)
+app.get("/uberbans", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  const today = dateKeyNY();
+  const list = [];
+  for (const [u, day] of bannedUntilMidnight.entries()) {
+    if (day === today) list.push(u);
+  }
+  res.type("text/plain").send(list.length ? `Cut off tonight: ${list.join(", ")}` : "No one is cut off.");
+});
+
+
 
 
 // End-of-stream summary
@@ -439,6 +511,8 @@ app.get("/resetfired", (req, res) => {
 app.get("/resetall", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
+    bannedUntilMidnight.clear();
+
   }
 
   firedCount = 0;
