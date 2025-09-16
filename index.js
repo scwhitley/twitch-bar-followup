@@ -198,13 +198,12 @@ app.get("/special", (_req, res) => {
 
 
 // ---------------- FOLLOWUP (Nightbot uses for each drink) ----------------
-// Query: bare=1, user=<name>, drink=<slug>, delayMs, key=<shared>
+// Accepts: bare=1, user=<name>, drink=<slug>, delayMs, key=<shared>
 app.get("/followup", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
   const drink = (req.query.drink || "").toString().slice(0, 40);
-  const delayMs =
-    Math.min(parseInt(req.query.delayMs || "2500", 10) || 2500, 4500);
+  const delayMs = Math.min(parseInt(req.query.delayMs || "2500", 10) || 2500, 4500);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -215,16 +214,11 @@ app.get("/followup", async (req, res) => {
 
   await sleep(delayMs);
 
+  // just pick a quip — no drink tag at all
   const base = sample(LINES);
-  const withDrink = (d, line) => {
-    if (!d) return line;
-    const nice = d.replace(/_/g, " ");
-    return Math.random() < 0.3 ? `(${nice}) ${line}` : line;
-  };
+  const line = (typeof base === "string" && base.trim()) ? base : "Enjoy!";
 
-  let line = withDrink(drink, base);
-
-    // per-user drink counting + session total + milestones + DAILY SPECIAL
+  // per-user drink counting + session total + milestones + DAILY SPECIAL
   let tail = "";
   if (user && drink) {
     const count = bumpDrinkCount(user);
@@ -235,26 +229,22 @@ app.get("/followup", async (req, res) => {
     if (count === 10) tail += " 🚕 Taxi is on the way. Chat, keep an eye on them.";
 
     // --- Daily Special check (one award per stream globally) ---
-const { date, drink: todaySpecial } = getTodaysSpecial();
-const flag = ensureSpecialFlagForToday();
+    const { date, drink: todaySpecial } = getTodaysSpecial();
+    const flag = ensureSpecialFlagForToday();
 
-if (drink.toLowerCase() === todaySpecial) {
-  if (!flag.awarded) {
-    // first and only award this stream
-    flag.awarded = true;
-
-    // show the callout immediately (non-blocking award + log)
-    tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
-    awardAndLogLater(user, drink, date, DAILY_BONUS); // your async helper
+    if (drink.toLowerCase() === todaySpecial) {
+      if (!flag.awarded) {
+        flag.awarded = true;
+        tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
+        awardAndLogLater(user, drink, date, DAILY_BONUS); // your async helper
+      }
+    }
   }
-  // else: already awarded this stream → no bonus line, no API call (normal behavior)
-}
-
-
 
   const msg = bare ? `${line}${tail}` : `Bartender to ${user}: ${line}${tail}`;
   return res.type("text/plain").send(msg);
 });
+
 
 // ---------------- COMPLAINT (for !barcomplaint) ----------------
 app.get("/complaint", async (req, res) => {
