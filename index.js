@@ -212,10 +212,14 @@ app.get("/drinks", (req, res) => {
     .send(`${who} has ${n} drink${n === 1 ? "" : "s"} tonight.`);
 });
 
-// GET /fightscount -> "Fights so far: X"
-app.get("/fightscount", (_req, res) => {
+// GET /fightscount?key=SECRET -> "Fights so far: X"
+app.get("/fightscount", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
   res.type("text/plain").send(`Fights so far: ${fightsCount}`);
 });
+
 
 // End-of-stream summary
 // /end?key=SECRET
