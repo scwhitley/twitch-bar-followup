@@ -438,10 +438,16 @@ app.get("/uberban", (req, res) => {
   if (!target) return res.status(400).type("text/plain").send("Missing ?target=");
   const ok = banUserUntilMidnight(target);
   if (!ok) return res.status(400).type("text/plain").send("Bad target");
+
+  // If silent=1, return a zero-width space so SE shows nothing extra
+  if (req.query.silent === "1") {
+    return res.type("text/plain").send("\u200B");
+  }
   return res
     .type("text/plain")
     .send(`${target} is cut off until midnight ET.`);
 });
+
 
 // Optional: unban mid-stream
 app.get("/uberunban", (req, res) => {
