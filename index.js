@@ -1,7 +1,15 @@
 import express from "express";
-const app = express();
+import {BARTENDER_FIRST, BARTENDER_LAST} from "./bartender-names.js"; // <-- import arrays here
 
+const app = express();
 app.disable("x-powered-by");
+
+// function to pick a random bartender name
+const randomBartenderName = () =>
+  `${BARTENDER_FIRST[Math.floor(Math.random() * BARTENDER_FIRST.length)]} ${
+    BARTENDER_LAST[Math.floor(Math.random() * BARTENDER_LAST.length)]
+  }`;
+
 
 // ---------------- Shared helpers ----------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
