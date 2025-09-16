@@ -95,12 +95,10 @@ function awardAndLogLater(user, drink, date, amount) {
   // fire-and-forget so the HTTP response is fast
   setImmediate(async () => {
     try {
-      const awarded = await seAddPoints(user, amount);
-      logSpecialAward({
-        user, drink, amount, date,
-        time: new Date().toISOString(),
-        awarded
-      });
+      const awarded = aspecialAwardedToday.add(awardKey);
+tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
+awardAndLogLater(user, drink, date, DAILY_BONUS); // no await
+
     } catch (e) {
       // swallow errors; don't crash server
     }
