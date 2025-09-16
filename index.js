@@ -11,6 +11,49 @@ const sample = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const randomBartenderName = () =>
   `${sample(BARTENDER_FIRST)} ${sample(BARTENDER_LAST)}`;
 
+// -------- Daily Drink Special --------
+const DRINK_KEYS = [
+  "vodka","whiskey","gin","rum","tequila",
+  "lightbeer","darkbeer","redwine","espresso","bourbon"
+];
+
+// daily bonus amount (Distortion Dollars shown in chat; SE deduct/add handled separately)
+const DAILY_BONUS = 1000;
+
+// salt so your daily pick isn't guessable by others (set in Render env if you want)
+const SPECIAL_SALT = process.env.SPECIAL_SALT || "distorted-realm-salt";
+
+// track who already got the special today (user lowercase + date) -> true
+const specialAwardedToday = new Set();
+
+// helper: YYYY-MM-DD in America/New_York without bringing in a tz lib
+const dateKeyNY = () => {
+  const now = new Date();
+  // get the NY components using locale; safe enough for daily granularity
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(now).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
+  return `${parts.year}-${parts.month}-${parts.day}`; // e.g. 2025-09-16
+};
+
+// simple deterministic hash → index
+function hashToIndex(str, mod) {
+  let h = 2166136261 >>> 0; // FNV-ish
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Number(h % mod);
+}
+
+function getTodaysSpecial() {
+  const key = dateKeyNY();
+  const idx = hashToIndex(`${key}:${SPECIAL_SALT}`, DRINK_KEYS.length);
+  return { date: key, drink: DRINK_KEYS[idx] };
+}
+
+
 // ---------------- Quip pools ----------------
 const LINES = [
   "Careful, that one's potent.",
@@ -80,6 +123,13 @@ const bumpDrinkCount = (u) => {
 app.get("/", (_req, res) => res.type("text/plain").send("OK"));
 app.get("/healthz", (_req, res) => res.type("text/plain").send("OK"));
 
+// GET /special -> "Today's special is: bourbon (+1000)"
+app.get("/special", (_req, res) => {
+  const { date, drink } = getTodaysSpecial();
+  res.type("text/plain").send(`Today's special (${date}) is: ${drink} (+${DAILY_BONUS})`);
+});
+
+
 // ---------------- FOLLOWUP (Nightbot uses for each drink) ----------------
 // Query: bare=1, user=<name>, drink=<slug>, delayMs, key=<shared>
 app.get("/followup", async (req, res) => {
@@ -108,15 +158,35 @@ app.get("/followup", async (req, res) => {
   let line = withDrink(drink, base);
 
   // per-user drink counting + session total + milestones
+    // per-user drink counting + session total + milestones + DAILY SPECIAL
   let tail = "";
   if (user && drink) {
     const count = bumpDrinkCount(user);
-    drinksServedCount += 1;           // <-- total drinks this session
+    drinksServedCount += 1;
     tail = ` That’s drink #${count} tonight.`;
     if (count === 3) tail += " Remember to hydrate. 💧";
     if (count === 5) tail += " Easy there, champion. 🛑 Hydration check!";
     if (count === 10) tail += " 🚕 Taxi is on the way. Chat, keep an eye on them.";
+
+    // --- Daily Special check ---
+    const { date, drink: todaySpecial } = getTodaysSpecial();
+    if (drink.toLowerCase() === todaySpecial) {
+      const awardKey = `${date}:${user.toLowerCase()}`;
+      const firstTimeToday = !specialAwardedToday.has(awardKey);
+      if (firstTimeToday) {
+        specialAwardedToday.add(awardKey);
+        // Callout (award is informational unless you wire SE API)
+        tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
+
+        // OPTIONAL: if you later add auto-award via SE API, trigger it here.
+        // For now we only message; mods can grant via SE's points tools.
+      } else {
+        // if you want to keep telling them they hit special even after the first time:
+        // tail += ` 🎯 Daily Special hit again!`;
+      }
+    }
   }
+
 
   const msg = bare ? `${line}${tail}` : `Bartender to ${user}: ${line}${tail}`;
   return res.type("text/plain").send(msg);
