@@ -212,6 +212,11 @@ app.get("/drinks", (req, res) => {
     .send(`${who} has ${n} drink${n === 1 ? "" : "s"} tonight.`);
 });
 
+// GET /fightscount -> "Fights so far: X"
+app.get("/fightscount", (_req, res) => {
+  res.type("text/plain").send(`Fights so far: ${fightsCount}`);
+});
+
 // End-of-stream summary
 // /end?key=SECRET
 app.get("/end", (req, res) => {
