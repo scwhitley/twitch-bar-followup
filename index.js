@@ -249,7 +249,11 @@ app.get("/followup", async (req, res) => {
     tail = ` That’s drink #${count} tonight.`;
     if (count === 3) tail += " Remember to hydrate. 💧";
     if (count === 5) tail += " Easy there, champion. 🛑 Hydration check!";
-    if (count === 10) tail += " 🚕 Taxi is on the way. Chat, keep an eye on them.";
+    if (count === 10) tail += " Chat, keep an eye on them.";
+    if (count === 12) tail += " Why are you crying and dancing on the table shirtless?";
+    if (count === 15) tail += " 🚕 Call them an !uber. Security get them out of here!";
+
+
 
     // --- Daily Special check (one award per stream globally) ---
     const { date, drink: todaySpecial } = getTodaysSpecial();
