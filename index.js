@@ -2,6 +2,44 @@
 import express from "express";
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 
+// --- StreamElements Loyalty API (optional auto-award) ---
+const SE_JWT = process.env.SE_JWT || "";
+const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
+
+/**
+ * Add loyalty points to a viewer via StreamElements API.
+ * amount must be a positive integer. username should be the Twitch login name.
+ * Returns true on success, false on error.
+ */
+async function seAddPoints(username, amount) {
+  try {
+    if (!SE_JWT || !SE_CHANNEL_ID) return false;
+    if (!username || !Number.isInteger(amount) || amount <= 0) return false;
+
+    // per SE v2 API: PUT /points/{channel}/{user}/{amount}
+    const url = `https://api.streamelements.com/kappa/v2/points/${encodeURIComponent(SE_CHANNEL_ID)}/${encodeURIComponent(username)}/${amount}`;
+
+    const resp = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${SE_JWT}`,
+        "Accept": "application/json"
+      }
+    });
+
+    // Common success is 200/204. Anything else: treat as fail.
+    if (resp.ok) return true;
+
+    // Optionally log body for debugging (don’t print to chat)
+    // const body = await resp.text();
+    // console.error("SE add points failed:", resp.status, body);
+    return false;
+  } catch (err) {
+    // console.error("SE add points error:", err);
+    return false;
+  }
+}
+
 const app = express();
 app.disable("x-powered-by");
 
@@ -157,7 +195,6 @@ app.get("/followup", async (req, res) => {
 
   let line = withDrink(drink, base);
 
-  // per-user drink counting + session total + milestones
     // per-user drink counting + session total + milestones + DAILY SPECIAL
   let tail = "";
   if (user && drink) {
@@ -168,21 +205,19 @@ app.get("/followup", async (req, res) => {
     if (count === 5) tail += " Easy there, champion. 🛑 Hydration check!";
     if (count === 10) tail += " 🚕 Taxi is on the way. Chat, keep an eye on them.";
 
-    // --- Daily Special check ---
+    // --- Daily Special check & auto-award via SE API ---
     const { date, drink: todaySpecial } = getTodaysSpecial();
     if (drink.toLowerCase() === todaySpecial) {
       const awardKey = `${date}:${user.toLowerCase()}`;
       const firstTimeToday = !specialAwardedToday.has(awardKey);
       if (firstTimeToday) {
         specialAwardedToday.add(awardKey);
-        // Callout (award is informational unless you wire SE API)
-        tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
 
-        // OPTIONAL: if you later add auto-award via SE API, trigger it here.
-        // For now we only message; mods can grant via SE's points tools.
-      } else {
-        // if you want to keep telling them they hit special even after the first time:
-        // tail += ` 🎯 Daily Special hit again!`;
+        // Try to add points via SE API (silent failure)
+        const awarded = await seAddPoints(user, DAILY_BONUS);
+
+        // Always show the callout; (optional) you could reflect failure if you want
+        tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars${awarded ? "" : ""}`;
       }
     }
   }
