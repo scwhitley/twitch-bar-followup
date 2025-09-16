@@ -227,11 +227,10 @@ app.get("/followup", async (req, res) => {
       if (firstTimeToday) {
         specialAwardedToday.add(awardKey);
 
-        // Try to add points via SE API (silent failure)
-        const awarded = await seAddPoints(user, DAILY_BONUS);
+        specialAwardedToday.add(awardKey);
+tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
+awardAndLogLater(user, drink, date, DAILY_BONUS); // no await
 
-        // Always show the callout; (optional) you could reflect failure if you want
-        tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars${awarded ? "" : ""}`;
       }
     }
   }
