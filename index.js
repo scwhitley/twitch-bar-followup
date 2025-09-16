@@ -5,23 +5,31 @@ import { fetch as undiciFetch } from "undici";
 const fetch = globalThis.fetch || undiciFetch;
 
 
-// --- StreamElements Loyalty API (optional auto-award) ---
+// --- StreamElements Loyalty API (auto-award) ---
 const SE_JWT = process.env.SE_JWT || "";
 const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
 
+// polyfilled fetch already set earlier:
+// import { fetch as undiciFetch } from "undici";
+// const fetch = globalThis.fetch || undiciFetch;
+
 /**
- * Add loyalty points to a viewer via StreamElements API.
- * amount must be a positive integer. username should be the Twitch login name.
- * Returns true on success, false on error.
+ * Attempt to add points to a user.
+ * Returns { ok:boolean, status:number, body:string }
  */
 async function seAddPoints(username, amount) {
+  const cleanUser = String(username || "")
+    .replace(/^@/, "")      // strip @ if present
+    .trim()
+    .toLowerCase();         // SE expects the Twitch login, lowercased
+
+  if (!SE_JWT || !SE_CHANNEL_ID || !cleanUser || !Number.isInteger(amount) || amount <= 0) {
+    return { ok: false, status: 0, body: "missing params/env" };
+  }
+
+  const url = `https://api.streamelements.com/kappa/v2/points/${encodeURIComponent(SE_CHANNEL_ID)}/${encodeURIComponent(cleanUser)}/${amount}`;
+
   try {
-    if (!SE_JWT || !SE_CHANNEL_ID) return false;
-    if (!username || !Number.isInteger(amount) || amount <= 0) return false;
-
-    // per SE v2 API: PUT /points/{channel}/{user}/{amount}
-    const url = `https://api.streamelements.com/kappa/v2/points/${encodeURIComponent(SE_CHANNEL_ID)}/${encodeURIComponent(username)}/${amount}`;
-
     const resp = await fetch(url, {
       method: "PUT",
       headers: {
@@ -30,18 +38,33 @@ async function seAddPoints(username, amount) {
       }
     });
 
-    // Common success is 200/204. Anything else: treat as fail.
-    if (resp.ok) return true;
-
-    // Optionally log body for debugging (don’t print to chat)
-    // const body = await resp.text();
-    // console.error("SE add points failed:", resp.status, body);
-    return false;
+    let bodyText = "";
+    try { bodyText = await resp.text(); } catch {}
+    return { ok: resp.ok, status: resp.status, body: bodyText?.slice(0, 300) || "" };
   } catch (err) {
-    // console.error("SE add points error:", err);
-    return false;
+    return { ok: false, status: -1, body: String(err).slice(0, 300) };
   }
 }
+
+/** Fire-and-forget award + log; never blocks Nightbot response */
+function awardAndLogLater(user, drink, date, amount) {
+  setImmediate(async () => {
+    const result = await seAddPoints(user, amount);
+    try {
+      logSpecialAward({
+        user,
+        drink,
+        amount,
+        date,
+        time: new Date().toISOString(),
+        awarded: result.ok,
+        status: result.status,
+        body: result.body
+      });
+    } catch {}
+  });
+}
+
 
 const app = express();
 app.disable("x-powered-by");
@@ -350,6 +373,26 @@ app.get("/fightscount", (req, res) => {
   res.type("text/plain").send(`Fights so far: ${fightsCount}`);
 });
 
+// Quick peek at the last special award entry (mods only)
+app.get("/speciallast", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  try {
+    if (!fs.existsSync(AWARD_LOG_FILE)) {
+      return res.type("text/plain").send("No awards logged yet.");
+    }
+    const data = JSON.parse(fs.readFileSync(AWARD_LOG_FILE, "utf8"));
+    const last = data[data.length - 1];
+    if (!last) return res.type("text/plain").send("No awards logged yet.");
+    const txt = `last award -> user: ${last.user}, drink: ${last.drink}, amount: ${last.amount}, ok: ${last.awarded}, status: ${last.status}`;
+    return res.type("text/plain").send(txt);
+  } catch {
+    return res.status(500).type("text/plain").send("Error reading last award");
+  }
+});
+
+
 
 // End-of-stream summary
 // /end?key=SECRET
@@ -405,6 +448,18 @@ app.get("/resetall", (req, res) => {
 
   res.type("text/plain").send("All counters reset.");
 });
+
+// DEBUG: manually test awarding points: /debug/award?user=<u>&amount=100&key=SECRET
+app.get("/debug/award", async (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  const user = (req.query.user || "").toString();
+  const amount = parseInt(req.query.amount || "0", 10);
+  const result = await seAddPoints(user, amount);
+  return res.type("text/plain").send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
+});
+
 
 
 // ---------------- Start server ----------------
