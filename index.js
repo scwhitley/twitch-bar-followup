@@ -1,6 +1,9 @@
 // index.js
 import express from "express";
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
+import { fetch as undiciFetch } from "undici";
+const fetch = globalThis.fetch || undiciFetch;
+
 
 // --- StreamElements Loyalty API (optional auto-award) ---
 const SE_JWT = process.env.SE_JWT || "";
