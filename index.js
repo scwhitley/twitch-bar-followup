@@ -174,6 +174,18 @@ const bumpDrinkCount = (u) => {
   return next;
 };
 
+// --- Daily Special: one award per stream (auto-resets at midnight ET) ---
+let specialAward = { date: null, awarded: false };
+
+function ensureSpecialFlagForToday() {
+  const today = dateKeyNY(); // you already have dateKeyNY()
+  if (specialAward.date !== today) {
+    specialAward = { date: today, awarded: false };
+  }
+  return specialAward;
+}
+
+
 // ---------------- Health routes ----------------
 app.get("/", (_req, res) => res.type("text/plain").send("OK"));
 app.get("/healthz", (_req, res) => res.type("text/plain").send("OK"));
@@ -222,21 +234,22 @@ app.get("/followup", async (req, res) => {
     if (count === 5) tail += " Easy there, champion. 🛑 Hydration check!";
     if (count === 10) tail += " 🚕 Taxi is on the way. Chat, keep an eye on them.";
 
-    // --- Daily Special check & auto-award via SE API ---
-    const { date, drink: todaySpecial } = getTodaysSpecial();
-    if (drink.toLowerCase() === todaySpecial) {
-      const awardKey = `${date}:${user.toLowerCase()}`;
-      const firstTimeToday = !specialAwardedToday.has(awardKey);
-      if (firstTimeToday) {
-        specialAwardedToday.add(awardKey);
+    // --- Daily Special check (one award per stream globally) ---
+const { date, drink: todaySpecial } = getTodaysSpecial();
+const flag = ensureSpecialFlagForToday();
 
-        specialAwardedToday.add(awardKey);
-tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
-awardAndLogLater(user, drink, date, DAILY_BONUS); // no await
+if (drink.toLowerCase() === todaySpecial) {
+  if (!flag.awarded) {
+    // first and only award this stream
+    flag.awarded = true;
 
-      }
-    }
+    // show the callout immediately (non-blocking award + log)
+    tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
+    awardAndLogLater(user, drink, date, DAILY_BONUS); // your async helper
   }
+  // else: already awarded this stream → no bonus line, no API call (normal behavior)
+}
+
 
 
   const msg = bare ? `${line}${tail}` : `Bartender to ${user}: ${line}${tail}`;
@@ -390,13 +403,19 @@ app.get("/resetall", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
+
   firedCount = 0;
   drinksServedCount = 0;
   cheersCount = 0;
   fightsCount = 0;
   drinkCounts.clear();
+
+  // NEW: reset the daily special flag too
+  specialAward = { date: dateKeyNY(), awarded: false };
+
   res.type("text/plain").send("All counters reset.");
 });
+
 
 // ---------------- Start server ----------------
 const PORT = process.env.PORT || 3000;
