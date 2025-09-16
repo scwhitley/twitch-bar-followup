@@ -66,17 +66,6 @@ const CHEERS = [
   (user) => `Bartender to ${user}: “Thanks fam. Tip jar smiles upon you.”`
 ];
 
-// ---------------- NEW: Random bartender names & fired counter ----------------
-const BARTENDER_FIRST = [
-  "Kai","Nova","Rhea","Zed","Lux","Orion","Vega","Jinx","Nyx","Rook",
-  "Echo","Sable","Kade","Mara","Axel","Rex","Skye","Jet","Ivy","Knox"
-];
-const BARTENDER_LAST = [
-  "Blackthorn","Nightjar","Grimm","Starfall","Ashwood","Ironhand","Vantablack",
-  "Stormborne","Bloodmoon","Graves","Darkwater","Voidwalker","Wolfsbane",
-  "Ravenshade","Steel","Crowe","Holloway","Frost","Locke","Onyx"
-];
-
 let firedCount = 0;
 const randomBartenderName = () => `${sample(BARTENDER_FIRST)} ${sample(BARTENDER_LAST)}`;
 
