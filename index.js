@@ -6,12 +6,16 @@ import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
 const fetch = globalThis.fetch || undiciFetch;
 
-// ---------- Twitch EventSub config ----------
+// ---------- Twitch config (EventSub + shared) ----------
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID || "";
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET || "";
 const TWITCH_EVENTSUB_SECRET = process.env.TWITCH_EVENTSUB_SECRET || "";
 const TWITCH_BROADCASTER_ID = process.env.TWITCH_BROADCASTER_ID || "";
-const TWITCH_REWARD_ID = process.env.TWITCH_REWARD_ID || ""; // optional: we also match by title "first"
+const TWITCH_REWARD_ID = process.env.TWITCH_REWARD_ID || ""; // used by EventSub match
+
+// ---- Polling fallback (user token + reward id for "First") ----
+const TWITCH_USER_TOKEN = process.env.TWITCH_USER_TOKEN || "";            // user-scoped token w/ read+manage redemptions
+const TWITCH_REWARD_FIRST_ID = process.env.TWITCH_REWARD_FIRST_ID || "";  // reward id for "First"
 
 // ---------- StreamElements Loyalty API (auto-award) ----------
 const SE_JWT = process.env.SE_JWT || "";
@@ -51,9 +55,7 @@ async function seAddPoints(username, amount) {
       },
     });
     let bodyText = "";
-    try {
-      bodyText = await resp.text();
-    } catch {}
+    try { bodyText = await resp.text(); } catch {}
     return { ok: resp.ok, status: resp.status, body: bodyText?.slice(0, 300) || "" };
   } catch (err) {
     return { ok: false, status: -1, body: String(err).slice(0, 300) };
@@ -364,63 +366,6 @@ app.get("/speciallast", (req, res) => {
   }
 });
 
-// End-of-stream summary
-app.get("/end", (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
-  const summary = `Session Summary: Bartenders fired: ${firedCount} | Drinks served: ${drinksServedCount} | Cheers given: ${cheersCount} | Fights broke out: ${fightsCount}`;
-  res.type("text/plain").send(summary);
-});
-
-// Admin resets
-app.get("/resetdrinks", (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
-  const user = (req.query.user || "").toString();
-  if (user) {
-    drinkCounts.delete(keyUser(user));
-    return res.type("text/plain").send(`Reset drink counter for ${user}.`);
-  }
-  drinkCounts.clear();
-  res.type("text/plain").send("Reset all drink counters.");
-});
-
-app.get("/resetfired", (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
-  firedCount = 0;
-  res.type("text/plain").send("Fired counter reset to 0");
-});
-
-app.get("/resetall", (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
-  firedCount = 0;
-  drinksServedCount = 0;
-  cheersCount = 0;
-  fightsCount = 0;
-  drinkCounts.clear();
-  specialAward = { date: dateKeyNY(), awarded: false };
-  res.type("text/plain").send("All counters reset.");
-});
-
-// DEBUG: award points manually
-app.get("/debug/award", async (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
-  const user = (req.query.user || "").toString();
-  const amount = parseInt(req.query.amount || "0", 10);
-  const result = await seAddPoints(user, amount);
-  return res
-    .type("text/plain")
-    .send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
-});
-
 // ---------------- Twitch EventSub (webhook) ----------------
 // Use express.raw ONLY on this route so we can verify HMAC with the raw body
 app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (req, res) => {
@@ -487,6 +432,142 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
   }
 
   return res.sendStatus(200);
+});
+
+// ---- Helix poller helpers (fallback if EventSub hiccups) ----
+async function twitchHelix(path, opts = {}) {
+  if (!TWITCH_CLIENT_ID || !TWITCH_USER_TOKEN) {
+    throw new Error("twitch not configured");
+  }
+  const resp = await fetch(`https://api.twitch.tv/helix${path}`, {
+    ...opts,
+    headers: {
+      "Client-Id": TWITCH_CLIENT_ID,
+      "Authorization": `Bearer ${TWITCH_USER_TOKEN}`,
+      "Content-Type": "application/json",
+      ...(opts.headers || {})
+    }
+  });
+  const text = await resp.text();
+  let json;
+  try { json = JSON.parse(text); } catch { json = null; }
+  if (!resp.ok) throw new Error(`Helix ${path} ${resp.status}: ${text}`);
+  return json ?? {};
+}
+
+async function getUnfulfilledFirstRedemptions() {
+  if (!TWITCH_BROADCASTER_ID || !TWITCH_REWARD_FIRST_ID) return [];
+  const q = new URLSearchParams({
+    broadcaster_id: TWITCH_BROADCASTER_ID,
+    reward_id: TWITCH_REWARD_FIRST_ID,
+    status: "UNFULFILLED",
+    first: "50"
+  }).toString();
+  const data = await twitchHelix(`/channel_points/custom_rewards/redemptions?${q}`);
+  return data.data || [];
+}
+
+async function fulfillRedemption(rewardId, redemptionId) {
+  const q = new URLSearchParams({
+    broadcaster_id: TWITCH_BROADCASTER_ID,
+    reward_id: rewardId,
+    id: redemptionId
+  }).toString();
+  await twitchHelix(`/channel_points/custom_rewards/redemptions?${q}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "FULFILLED" })
+  });
+}
+
+const processedRedemptions = new Set();
+const FIRST_REDEEM_POINTS = 200;
+
+async function pollFirstRedeemsOnce() {
+  try {
+    if (!TWITCH_CLIENT_ID || !TWITCH_USER_TOKEN || !TWITCH_BROADCASTER_ID || !TWITCH_REWARD_FIRST_ID) {
+      return; // not configured yet
+    }
+    const items = await getUnfulfilledFirstRedemptions();
+    for (const r of items) {
+      const key = `${r.id}:${r.user_login}`;
+      if (processedRedemptions.has(key)) continue;
+
+      const login = (r.user_login || "").toLowerCase();
+      if (login) {
+        await seAddPoints(login, FIRST_REDEEM_POINTS);
+      }
+      await fulfillRedemption(r.reward.id, r.id);
+
+      processedRedemptions.add(key);
+      if (processedRedemptions.size > 5000) processedRedemptions.clear();
+    }
+  } catch (e) {
+    console.error("[first-redeem] poll error:", e.message);
+  }
+}
+
+// Start the lightweight polling loop + health route
+setInterval(pollFirstRedeemsOnce, 15000);
+app.get("/first/status", (_req, res) => {
+  const ready = !!(TWITCH_CLIENT_ID && TWITCH_USER_TOKEN && TWITCH_BROADCASTER_ID && TWITCH_REWARD_FIRST_ID);
+  res.type("text/plain").send(ready ? "first-poller: ready" : "first-poller: missing env");
+});
+
+// ---------------- End-of-stream summary ----------------
+app.get("/end", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  const summary = `Session Summary: Bartenders fired: ${firedCount} | Drinks served: ${drinksServedCount} | Cheers given: ${cheersCount} | Fights broke out: ${fightsCount}`;
+  res.type("text/plain").send(summary);
+});
+
+// Admin resets
+app.get("/resetdrinks", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  const user = (req.query.user || "").toString();
+  if (user) {
+    drinkCounts.delete(keyUser(user));
+    return res.type("text/plain").send(`Reset drink counter for ${user}.`);
+  }
+  drinkCounts.clear();
+  res.type("text/plain").send("Reset all drink counters.");
+});
+
+app.get("/resetfired", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  firedCount = 0;
+  res.type("text/plain").send("Fired counter reset to 0");
+});
+
+app.get("/resetall", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  firedCount = 0;
+  drinksServedCount = 0;
+  cheersCount = 0;
+  fightsCount = 0;
+  drinkCounts.clear();
+  specialAward = { date: dateKeyNY(), awarded: false };
+  res.type("text/plain").send("All counters reset.");
+});
+
+// DEBUG: award points manually
+app.get("/debug/award", async (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  const user = (req.query.user || "").toString();
+  const amount = parseInt(req.query.amount || "0", 10);
+  const result = await seAddPoints(user, amount);
+  return res
+    .type("text/plain")
+    .send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
 });
 
 // ---------------- Start server ----------------
