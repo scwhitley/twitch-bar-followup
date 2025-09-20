@@ -1,45 +1,59 @@
 // index.js
 import express from "express";
+import crypto from "crypto";
+import fs from "fs";
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
 const fetch = globalThis.fetch || undiciFetch;
 
+// ---------- Twitch EventSub config ----------
+const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID || "";
+const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET || "";
+const TWITCH_EVENTSUB_SECRET = process.env.TWITCH_EVENTSUB_SECRET || "";
+const TWITCH_BROADCASTER_ID = process.env.TWITCH_BROADCASTER_ID || "";
+const TWITCH_REWARD_ID = process.env.TWITCH_REWARD_ID || ""; // optional: we also match by title "first"
 
-// --- StreamElements Loyalty API (auto-award) ---
+// ---------- StreamElements Loyalty API (auto-award) ----------
 const SE_JWT = process.env.SE_JWT || "";
 const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
 
-// polyfilled fetch already set earlier:
-// import { fetch as undiciFetch } from "undici";
-// const fetch = globalThis.fetch || undiciFetch;
+// ---------- Award log (optional, keeps /speciallast working) ----------
+const AWARD_LOG_FILE = "./award-log.json";
+function logSpecialAward(entry) {
+  try {
+    const arr = fs.existsSync(AWARD_LOG_FILE)
+      ? JSON.parse(fs.readFileSync(AWARD_LOG_FILE, "utf8"))
+      : [];
+    arr.push(entry);
+    fs.writeFileSync(AWARD_LOG_FILE, JSON.stringify(arr.slice(-200), null, 2));
+  } catch {}
+}
 
 /**
  * Attempt to add points to a user.
  * Returns { ok:boolean, status:number, body:string }
  */
 async function seAddPoints(username, amount) {
-  const cleanUser = String(username || "")
-    .replace(/^@/, "")      // strip @ if present
-    .trim()
-    .toLowerCase();         // SE expects the Twitch login, lowercased
-
+  const cleanUser = String(username || "").replace(/^@/, "").trim().toLowerCase();
   if (!SE_JWT || !SE_CHANNEL_ID || !cleanUser || !Number.isInteger(amount) || amount <= 0) {
     return { ok: false, status: 0, body: "missing params/env" };
   }
-
-  const url = `https://api.streamelements.com/kappa/v2/points/${encodeURIComponent(SE_CHANNEL_ID)}/${encodeURIComponent(cleanUser)}/${amount}`;
+  const url = `https://api.streamelements.com/kappa/v2/points/${encodeURIComponent(
+    SE_CHANNEL_ID
+  )}/${encodeURIComponent(cleanUser)}/${amount}`;
 
   try {
     const resp = await fetch(url, {
       method: "PUT",
       headers: {
-        "Authorization": `Bearer ${SE_JWT}`,
-        "Accept": "application/json"
-      }
+        Authorization: `Bearer ${SE_JWT}`,
+        Accept: "application/json",
+      },
     });
-
     let bodyText = "";
-    try { bodyText = await resp.text(); } catch {}
+    try {
+      bodyText = await resp.text();
+    } catch {}
     return { ok: resp.ok, status: resp.status, body: bodyText?.slice(0, 300) || "" };
   } catch (err) {
     return { ok: false, status: -1, body: String(err).slice(0, 300) };
@@ -59,12 +73,11 @@ function awardAndLogLater(user, drink, date, amount) {
         time: new Date().toISOString(),
         awarded: result.ok,
         status: result.status,
-        body: result.body
+        body: result.body,
       });
     } catch {}
   });
 }
-
 
 const app = express();
 app.disable("x-powered-by");
@@ -72,65 +85,42 @@ app.disable("x-powered-by");
 // ---------------- Shared helpers ----------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sample = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const randomBartenderName = () =>
-  `${sample(BARTENDER_FIRST)} ${sample(BARTENDER_LAST)}`;
+const randomBartenderName = () => `${sample(BARTENDER_FIRST)} ${sample(BARTENDER_LAST)}`;
 
 // -------- Daily Drink Special --------
-const DRINK_KEYS = [
-  "vodka","whiskey","gin","rum","tequila",
-  "lightbeer","darkbeer","redwine","espresso","bourbon"
-];
-
-// daily bonus amount (Distortion Dollars shown in chat; SE deduct/add handled separately)
+const DRINK_KEYS = ["vodka", "whiskey", "gin", "rum", "tequila", "lightbeer", "darkbeer", "redwine", "espresso", "bourbon"];
 const DAILY_BONUS = 1000;
-
-// salt so your daily pick isn't guessable by others (set in Render env if you want)
 const SPECIAL_SALT = process.env.SPECIAL_SALT || "distorted-realm-salt";
+const specialAwardedToday = new Set(); // user@YYYY-MM-DD -> true
 
-// track who already got the special today (user lowercase + date) -> true
-const specialAwardedToday = new Set();
-
-// helper: YYYY-MM-DD in America/New_York without bringing in a tz lib
+// helper: YYYY-MM-DD in America/New_York
 const dateKeyNY = () => {
   const now = new Date();
-  // get the NY components using locale; safe enough for daily granularity
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
-    year: "numeric", month: "2-digit", day: "2-digit"
-  }).formatToParts(now).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
-  return `${parts.year}-${parts.month}-${parts.day}`; // e.g. 2025-09-16
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .formatToParts(now)
+    .reduce((acc, p) => ((acc[p.type] = p.value), acc), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
 };
 
 // simple deterministic hash → index
 function hashToIndex(str, mod) {
-  let h = 2166136261 >>> 0; // FNV-ish
+  let h = 2166136261 >>> 0;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
   return Number(h % mod);
 }
-
 function getTodaysSpecial() {
   const key = dateKeyNY();
   const idx = hashToIndex(`${key}:${SPECIAL_SALT}`, DRINK_KEYS.length);
   return { date: key, drink: DRINK_KEYS[idx] };
 }
-
-function awardAndLogLater(user, drink, date, amount) {
-  // fire-and-forget so the HTTP response is fast
-  setImmediate(async () => {
-    try {
-      const awarded = aspecialAwardedToday.add(awardKey);
-tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
-awardAndLogLater(user, drink, date, DAILY_BONUS); // no await
-
-    } catch (e) {
-      // swallow errors; don't crash server
-    }
-  });
-}
-
 
 // ---------------- Quip pools ----------------
 const LINES = [
@@ -148,7 +138,7 @@ const LINES = [
   "Enjoy!",
   "*looks you up and down* that’s the outfit you chose tonight? *shrugs* couldn’t be me?",
   "Don’t spill it on the carpet.",
-  "Here’s your drink, now get out my face."
+  "Here’s your drink, now get out my face.",
 ];
 
 const COMPLAINTS = [
@@ -162,7 +152,7 @@ const COMPLAINTS = [
   (user, issue) => `Bartender to ${user}: “No refunds, but I’ll throw in an extra olive. That’s our version of customer service.”`,
   (user, issue) => `Bartender to ${user}: “If you wanted perfection, you should’ve gone to Hogwarts, not my bar.”`,
   (user, issue) => `Bartender to ${user}: “OMG I'm so sorry! Heres a new drink for you, please don't tell D4rth Distortion.”`,
-  (user, issue) => `Bartender to ${user}: “Alright ${user}, I’ll remake it… but this time I’m charging you emotional labor.”`
+  (user, issue) => `Bartender to ${user}: “Alright ${user}, I’ll remake it… but this time I’m charging you emotional labor.”`,
 ];
 
 const STORM_OFF = [
@@ -170,7 +160,7 @@ const STORM_OFF = [
   (user) => `Bartender yeets the bar rag, mutters something unholy about ${user}, and moonwalks out the door.`,
   (user) => `“I’m unionized with the Sith now,” the bartender hisses at ${user} before force-sliding out.`,
   (user) => `The bartender flips a coaster at ${user} like a ninja star and vanishes into the night.`,
-  (user) => `Keys slam. “I quit this pixel bar,” they snarl at ${user}, exiting stage left in dramatic fashion.`
+  (user) => `Keys slam. “I quit this pixel bar,” they snarl at ${user}, exiting stage left in dramatic fashion.`,
 ];
 
 const CHEERS = [
@@ -178,7 +168,7 @@ const CHEERS = [
   (user) => `Bartender to ${user}: “Cheers, legend. Next one comes with extra style points.”`,
   (user) => `Bartender to ${user}: “Verified: you have excellent taste and impeccable vibes.”`,
   (user) => `Bartender to ${user}: “Gratitude noted. Hydration and happiness incoming.”`,
-  (user) => `Bartender to ${user}: “Thanks fam. Tip jar smiles upon you.”`
+  (user) => `Bartender to ${user}: “Thanks fam. Tip jar smiles upon you.”`,
 ];
 
 // ---------------- State: fired counter, per-user drinks, and session totals ----------------
@@ -187,7 +177,7 @@ let drinksServedCount = 0;
 let cheersCount = 0;
 let fightsCount = 0;
 
-const drinkCounts = new Map(); // key: username (lowercase), value: count tonight
+const drinkCounts = new Map();
 const keyUser = (u) => String(u || "").trim().toLowerCase();
 const bumpDrinkCount = (u) => {
   const k = keyUser(u);
@@ -199,16 +189,13 @@ const bumpDrinkCount = (u) => {
 
 // --- Daily Special: one award per stream (auto-resets at midnight ET) ---
 let specialAward = { date: null, awarded: false };
-
 function ensureSpecialFlagForToday() {
-  const today = dateKeyNY(); // you already have dateKeyNY()
+  const today = dateKeyNY();
   if (specialAward.date !== today) {
     specialAward = { date: today, awarded: false };
   }
   return specialAward;
 }
-
-
 
 // ---------------- Health routes ----------------
 app.get("/", (_req, res) => res.type("text/plain").send("OK"));
@@ -219,7 +206,6 @@ app.get("/special", (_req, res) => {
   const { date, drink } = getTodaysSpecial();
   res.type("text/plain").send(`Today's special (${date}) is: ${drink} (+${DAILY_BONUS})`);
 });
-
 
 // ---------------- FOLLOWUP (Nightbot uses for each drink) ----------------
 // Accepts: bare=1, user=<name>, drink=<slug>, delayMs, key=<shared>
@@ -238,18 +224,9 @@ app.get("/followup", async (req, res) => {
 
   await sleep(delayMs);
 
-    // hard gate: banned users can't order until midnight ET
-  if (isUserBanned(user)) {
-    const msg = bare
-      ? "Cut off. No more drinks tonight. 🚫"
-      : `Bartender to ${user}: You’ve been cut off for the night. 🚫`;
-    return res.type("text/plain").send(msg);
-  }
-
-
   // just pick a quip — no drink tag at all
   const base = sample(LINES);
-  const line = (typeof base === "string" && base.trim()) ? base : "Enjoy!";
+  const line = typeof base === "string" && base.trim() ? base : "Enjoy!";
 
   // per-user drink counting + session total + milestones + DAILY SPECIAL
   let tail = "";
@@ -262,17 +239,14 @@ app.get("/followup", async (req, res) => {
     if (count === 7) tail += " Why are you crying and dancing on the table shirtless?";
     if (count === 10) tail += " 🚕 Call them an uber. Security get them out of here!";
 
-
-
     // --- Daily Special check (one award per stream globally) ---
     const { date, drink: todaySpecial } = getTodaysSpecial();
     const flag = ensureSpecialFlagForToday();
-
     if (drink.toLowerCase() === todaySpecial) {
       if (!flag.awarded) {
         flag.awarded = true;
         tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
-        awardAndLogLater(user, drink, date, DAILY_BONUS); // your async helper
+        awardAndLogLater(user, drink, date, DAILY_BONUS);
       }
     }
   }
@@ -281,14 +255,12 @@ app.get("/followup", async (req, res) => {
   return res.type("text/plain").send(msg);
 });
 
-
 // ---------------- COMPLAINT (for !barcomplaint) ----------------
 app.get("/complaint", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
   const issue = (req.query.issue || "").toString().slice(0, 120);
-  const delayMs =
-    Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 4500);
+  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 4500);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -306,8 +278,7 @@ app.get("/complaint", async (req, res) => {
 // ---------------- FIRE PACK (for !fire) ----------------
 app.get("/firepack", async (req, res) => {
   const user = (req.query.user || "").toString();
-  const delayMs =
-    Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
+  const delayMs = Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -326,15 +297,14 @@ app.get("/firepack", async (req, res) => {
 app.get("/cheers", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
-  const delayMs =
-    Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 4500);
+  const delayMs = Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 4500);
 
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
 
   await sleep(delayMs);
-  cheersCount += 1; // track session cheers
+  cheersCount += 1;
   const full = sample(CHEERS)(user || "friend");
   if (bare) {
     const stripped = full.replace(/^Bartender to .*?:\s*/, "");
@@ -348,37 +318,26 @@ const trackFightHandler = (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
-  // Optional: track by type if provided (fight vs fight2)
-  // fightsByType[req.query.type || "fight"] = (fightsByType[req.query.type || "fight"] || 0) + 1;
   fightsCount += 1;
   return res.status(204).send(); // no chat output
 };
-
-// Accept multiple paths so either command works
 app.get("/trackfight", trackFightHandler);
 app.get("/trackfight2", trackFightHandler);
 app.get("/track/fight", trackFightHandler);
 
-
 // ---------------- Utility & Summary ----------------
 app.get("/firedcount", (_req, res) => {
-  return res
-    .type("text/plain")
-    .send(`Bartenders fired so far: ${firedCount}`);
+  return res.type("text/plain").send(`Bartenders fired so far: ${firedCount}`);
 });
 
-// GET /drinks?user=<name> -> "<name> has N drinks tonight."
 app.get("/drinks", (req, res) => {
   const user = (req.query.user || "").toString();
   const k = keyUser(user);
   const n = k ? drinkCounts.get(k) || 0 : 0;
   const who = user || "Guest";
-  res
-    .type("text/plain")
-    .send(`${who} has ${n} drink${n === 1 ? "" : "s"} tonight.`);
+  res.type("text/plain").send(`${who} has ${n} drink${n === 1 ? "" : "s"} tonight.`);
 });
 
-// GET /fightscount?key=SECRET -> "Fights so far: X"
 app.get("/fightscount", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -405,11 +364,7 @@ app.get("/speciallast", (req, res) => {
   }
 });
 
-
-
-
 // End-of-stream summary
-// /end?key=SECRET
 app.get("/end", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -418,9 +373,7 @@ app.get("/end", (req, res) => {
   res.type("text/plain").send(summary);
 });
 
-// Admin: reset per-user or all drink counters
-// /resetdrinks?key=SECRET            -> reset all
-// /resetdrinks?user=<name>&key=SECRET -> reset one user
+// Admin resets
 app.get("/resetdrinks", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -434,8 +387,6 @@ app.get("/resetdrinks", (req, res) => {
   res.type("text/plain").send("Reset all drink counters.");
 });
 
-// Admin: reset firedCount
-// /resetfired?key=SECRET
 app.get("/resetfired", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -444,28 +395,20 @@ app.get("/resetfired", (req, res) => {
   res.type("text/plain").send("Fired counter reset to 0");
 });
 
-// Admin: reset EVERYTHING for a fresh session
-// /resetall?key=SECRET
 app.get("/resetall", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
-    bannedUntilMidnight.clear();
-
   }
-
   firedCount = 0;
   drinksServedCount = 0;
   cheersCount = 0;
   fightsCount = 0;
   drinkCounts.clear();
-
-  // NEW: reset the daily special flag too
   specialAward = { date: dateKeyNY(), awarded: false };
-
   res.type("text/plain").send("All counters reset.");
 });
 
-// DEBUG: manually test awarding points: /debug/award?user=<u>&amount=100&key=SECRET
+// DEBUG: award points manually
 app.get("/debug/award", async (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
@@ -473,10 +416,78 @@ app.get("/debug/award", async (req, res) => {
   const user = (req.query.user || "").toString();
   const amount = parseInt(req.query.amount || "0", 10);
   const result = await seAddPoints(user, amount);
-  return res.type("text/plain").send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
+  return res
+    .type("text/plain")
+    .send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
 });
 
+// ---------------- Twitch EventSub (webhook) ----------------
+// Use express.raw ONLY on this route so we can verify HMAC with the raw body
+app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (req, res) => {
+  // Verify Twitch HMAC signature
+  const msgId = req.header("twitch-eventsub-message-id");
+  const ts = req.header("twitch-eventsub-message-timestamp");
+  const sig = req.header("twitch-eventsub-message-signature"); // "sha256=..."
+  if (!msgId || !ts || !sig) return res.status(400).send("missing headers");
 
+  // Reject stale >10min
+  const age = Math.abs(Date.now() - Date.parse(ts));
+  if (age > 10 * 60 * 1000) return res.status(403).send("stale");
+
+  const hmac = crypto.createHmac("sha256", TWITCH_EVENTSUB_SECRET);
+  hmac.update(msgId + ts + req.body); // raw Buffer
+  const expected = "sha256=" + hmac.digest("hex");
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
+      return res.status(403).send("bad signature");
+    }
+  } catch {
+    return res.status(403).send("bad signature");
+  }
+
+  const messageType = req.header("twitch-eventsub-message-type");
+  const payload = JSON.parse(req.body.toString("utf8"));
+
+  if (messageType === "webhook_callback_verification") {
+    return res.status(200).type("text/plain").send(payload.challenge);
+  }
+  if (messageType === "revocation") {
+    console.warn("EventSub revoked:", payload?.subscription?.status);
+    return res.sendStatus(200);
+  }
+  if (messageType === "notification") {
+    try {
+      const subType = payload?.subscription?.type;
+      const ev = payload?.event;
+      if (subType === "channel.channel_points_custom_reward_redemption.add") {
+        const title = (ev?.reward?.title || "").toLowerCase();
+        const rewardId = ev?.reward?.id || "";
+        const login = ev?.user_login || ""; // lowercase
+        const matchesId = TWITCH_REWARD_ID && rewardId === TWITCH_REWARD_ID;
+        const matchesTitle = title === "first";
+
+        if ((matchesId || matchesTitle) && login) {
+          const result = await seAddPoints(login, 200);
+          logSpecialAward({
+            user: login,
+            drink: "channel-redeem:first",
+            amount: 200,
+            date: dateKeyNY(),
+            time: new Date().toISOString(),
+            awarded: result.ok,
+            status: result.status,
+            body: result.body,
+          });
+        }
+      }
+    } catch (e) {
+      console.error("EventSub handler error:", e);
+    }
+    return res.sendStatus(200);
+  }
+
+  return res.sendStatus(200);
+});
 
 // ---------------- Start server ----------------
 const PORT = process.env.PORT || 3000;
