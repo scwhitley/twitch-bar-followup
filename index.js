@@ -13,11 +13,11 @@ const TWITCH_EVENTSUB_SECRET = process.env.TWITCH_EVENTSUB_SECRET || "";
 const TWITCH_BROADCASTER_ID = process.env.TWITCH_BROADCASTER_ID || "";
 const TWITCH_REWARD_ID = process.env.TWITCH_REWARD_ID || ""; // optional
 
-// ---------- StreamElements Loyalty API (auto-award) ----------
+// ---------- StreamElements Loyalty API ----------
 const SE_JWT = process.env.SE_JWT || "";
 const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
 
-// ---------- Award log (optional, keeps /speciallast working) ----------
+// ---------- Award log (shared) ----------
 const AWARD_LOG_FILE = "./award-log.json";
 function logSpecialAward(entry) {
   try {
@@ -29,26 +29,19 @@ function logSpecialAward(entry) {
   } catch {}
 }
 
-/**
- * Attempt to add points to a user.
- * Returns { ok:boolean, status:number, body:string }
- */
+/** Add (or deduct with negative) points to a user via SE */
 async function seAddPoints(username, amount) {
   const cleanUser = String(username || "").replace(/^@/, "").trim().toLowerCase();
-  if (!SE_JWT || !SE_CHANNEL_ID || !cleanUser || !Number.isInteger(amount) || amount <= 0) {
+  if (!SE_JWT || !SE_CHANNEL_ID || !cleanUser || !Number.isInteger(amount) || amount === 0) {
     return { ok: false, status: 0, body: "missing params/env" };
   }
   const url = `https://api.streamelements.com/kappa/v2/points/${encodeURIComponent(
     SE_CHANNEL_ID
   )}/${encodeURIComponent(cleanUser)}/${amount}`;
-
   try {
     const resp = await fetch(url, {
       method: "PUT",
-      headers: {
-        Authorization: `Bearer ${SE_JWT}`,
-        Accept: "application/json",
-      },
+      headers: { Authorization: `Bearer ${SE_JWT}`, Accept: "application/json" },
     });
     let bodyText = "";
     try { bodyText = await resp.text(); } catch {}
@@ -58,20 +51,15 @@ async function seAddPoints(username, amount) {
   }
 }
 
-/** Fire-and-forget award + log; never blocks Nightbot response */
+/** Fire-and-forget SE award (used for daily special bonus logging) */
 function awardAndLogLater(user, drink, date, amount) {
   setImmediate(async () => {
     const result = await seAddPoints(user, amount);
     try {
       logSpecialAward({
-        user,
-        drink,
-        amount,
-        date,
+        user, drink, amount, date,
         time: new Date().toISOString(),
-        awarded: result.ok,
-        status: result.status,
-        body: result.body,
+        awarded: result.ok, status: result.status, body: result.body,
       });
     } catch {}
   });
@@ -93,17 +81,13 @@ const SPECIAL_SALT = process.env.SPECIAL_SALT || "distorted-realm-salt";
 const dateKeyNY = () => {
   const now = new Date();
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(now).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
   return `${parts.year}-${parts.month}-${parts.day}`;
 };
 function hashToIndex(str, mod) {
   let h = 2166136261 >>> 0;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
   return Number(h % mod);
 }
 function getTodaysSpecial() {
@@ -161,7 +145,7 @@ const CHEERS = [
   (user) => `Bartender to ${user}: “Thanks fam. Tip jar smiles upon you.”`,
 ];
 
-// ---------------- State: fired counter, per-user drinks, and session totals ----------------
+// ---------------- State counters ----------------
 let firedCount = 0;
 let drinksServedCount = 0;
 let cheersCount = 0;
@@ -177,13 +161,11 @@ const bumpDrinkCount = (u) => {
   return next;
 };
 
-// --- Daily Special: one award per stream (auto-resets at midnight ET) ---
+// --- Daily Special flag ---
 let specialAward = { date: null, awarded: false };
 function ensureSpecialFlagForToday() {
   const today = dateKeyNY();
-  if (specialAward.date !== today) {
-    specialAward = { date: today, awarded: false };
-  }
+  if (specialAward.date !== today) specialAward = { date: today, awarded: false };
   return specialAward;
 }
 
@@ -191,32 +173,27 @@ function ensureSpecialFlagForToday() {
 app.get("/", (_req, res) => res.type("text/plain").send("OK"));
 app.get("/healthz", (_req, res) => res.type("text/plain").send("OK"));
 
-// GET /special -> "Today's special is: bourbon (+1000)"
+// Daily special peek
 app.get("/special", (_req, res) => {
   const { date, drink } = getTodaysSpecial();
   res.type("text/plain").send(`Today's special (${date}) is: ${drink} (+${DAILY_BONUS})`);
 });
 
-// ---------------- FOLLOWUP (Nightbot uses for drinks) ----------------
+// ---------------- FOLLOWUP (drinks) ----------------
 app.get("/followup", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
   const drink = (req.query.drink || "").toString().slice(0, 40);
   const delayMs = Math.min(parseInt(req.query.delayMs || "2500", 10) || 2500, 4500);
 
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
-  if (!bare && !user) {
-    return res.status(400).type("text/plain").send("Missing ?user= parameter");
-  }
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
+  if (!bare && !user) return res.status(400).type("text/plain").send("Missing ?user=");
 
   await sleep(delayMs);
 
   const base = sample(LINES);
   const line = typeof base === "string" && base.trim() ? base : "Enjoy!";
 
-  // per-user drink counting + milestones + daily special
   let tail = "";
   if (user && drink) {
     const count = bumpDrinkCount(user);
@@ -229,12 +206,10 @@ app.get("/followup", async (req, res) => {
 
     const { date, drink: todaySpecial } = getTodaysSpecial();
     const flag = ensureSpecialFlagForToday();
-    if (drink.toLowerCase() === todaySpecial) {
-      if (!flag.awarded) {
-        flag.awarded = true;
-        tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
-        awardAndLogLater(user, drink, date, DAILY_BONUS);
-      }
+    if (drink.toLowerCase() === todaySpecial && !flag.awarded) {
+      flag.awarded = true;
+      tail += ` 🎯 Daily Special! +${DAILY_BONUS} Distortion Dollars`;
+      awardAndLogLater(user, drink, date, DAILY_BONUS);
     }
   }
 
@@ -242,64 +217,41 @@ app.get("/followup", async (req, res) => {
   return res.type("text/plain").send(msg);
 });
 
-// ---------------- COMPLAINT ----------------
+// ---------------- COMPLAINT / FIRE / CHEERS / FIGHTS ----------------
 app.get("/complaint", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
   const issue = (req.query.issue || "").toString().slice(0, 120);
   const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 4500);
-
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   await sleep(delayMs);
   const full = sample(COMPLAINTS)(user || "guest", issue);
-  if (bare) {
-    const stripped = full.replace(/^Bartender to .*?:\s*/, "");
-    return res.type("text/plain").send(stripped);
-  }
+  if (bare) return res.type("text/plain").send(full.replace(/^Bartender to .*?:\s*/, ""));
   return res.type("text/plain").send(full);
 });
-
-// ---------------- FIRE PACK ----------------
 app.get("/firepack", async (req, res) => {
   const user = (req.query.user || "").toString();
   const delayMs = Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
-
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   await sleep(delayMs);
   const storm = sample(STORM_OFF)(user || "the Realm");
   firedCount += 1;
   const hire = `A new bartender, ${randomBartenderName()}, has now taken over the Distorted Realm bar to better serve the Realm. (Fired so far: ${firedCount})`;
   return res.type("text/plain").send(`${storm} ${hire}`);
 });
-
-// ---------------- CHEERS ----------------
 app.get("/cheers", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
   const delayMs = Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 4500);
-
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   await sleep(delayMs);
   cheersCount += 1;
   const full = sample(CHEERS)(user || "friend");
-  if (bare) {
-    const stripped = full.replace(/^Bartender to .*?:\s*/, "");
-    return res.type("text/plain").send(stripped);
-  }
+  if (bare) return res.type("text/plain").send(full.replace(/^Bartender to .*?:\s*/, ""));
   return res.type("text/plain").send(full);
 });
-
-// --- FIGHT tracking (silent) ---
 const trackFightHandler = (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   fightsCount += 1;
   return res.status(204).send();
 };
@@ -308,26 +260,19 @@ app.get("/trackfight2", trackFightHandler);
 app.get("/track/fight", trackFightHandler);
 
 // ---------------- Utility & Summary ----------------
-app.get("/firedcount", (_req, res) => {
-  return res.type("text/plain").send(`Bartenders fired so far: ${firedCount}`);
-});
+app.get("/firedcount", (_req, res) => res.type("text/plain").send(`Bartenders fired so far: ${firedCount}`));
 app.get("/drinks", (req, res) => {
   const user = (req.query.user || "").toString();
   const k = keyUser(user);
   const n = k ? drinkCounts.get(k) || 0 : 0;
-  const who = user || "Guest";
-  res.type("text/plain").send(`${who} has ${n} drink${n === 1 ? "" : "s"} tonight.`);
+  res.type("text/plain").send(`${user || "Guest"} has ${n} drink${n === 1 ? "" : "s"} tonight.`);
 });
 app.get("/fightscount", (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   res.type("text/plain").send(`Fights so far: ${fightsCount}`);
 });
 app.get("/speciallast", (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   try {
     if (!fs.existsSync(AWARD_LOG_FILE)) return res.type("text/plain").send("No awards logged yet.");
     const data = JSON.parse(fs.readFileSync(AWARD_LOG_FILE, "utf8"));
@@ -373,70 +318,16 @@ app.get("/debug/award", async (req, res) => {
   return res.type("text/plain").send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
 });
 
-// ---------------- Twitch EventSub (webhook) ----------------
-app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (req, res) => {
-  const msgId = req.header("twitch-eventsub-message-id");
-  const ts = req.header("twitch-eventsub-message-timestamp");
-  const sig = req.header("twitch-eventsub-message-signature");
-  if (!msgId || !ts || !sig) return res.status(400).send("missing headers");
-  const age = Math.abs(Date.now() - Date.parse(ts));
-  if (age > 10 * 60 * 1000) return res.status(403).send("stale");
+// ===================== GRASS ENTREPRENEUR =====================
 
-  const hmac = crypto.createHmac("sha256", TWITCH_EVENTSUB_SECRET);
-  hmac.update(msgId + ts + req.body);
-  const expected = "sha256=" + hmac.digest("hex");
-  try {
-    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
-      return res.status(403).send("bad signature");
-    }
-  } catch {
-    return res.status(403).send("bad signature");
-  }
+// Costs (Distortion Dollars)
+const COSTS = {
+  flower: 20,
+  brownies: 35,
+  gummies: 30,
+};
 
-  const messageType = req.header("twitch-eventsub-message-type");
-  const payload = JSON.parse(req.body.toString("utf8"));
-  if (messageType === "webhook_callback_verification") {
-    return res.status(200).type("text/plain").send(payload.challenge);
-  }
-  if (messageType === "revocation") {
-    console.warn("EventSub revoked:", payload?.subscription?.status);
-    return res.sendStatus(200);
-  }
-  if (messageType === "notification") {
-    try {
-      const subType = payload?.subscription?.type;
-      const ev = payload?.event;
-      if (subType === "channel.channel_points_custom_reward_redemption.add") {
-        const title = (ev?.reward?.title || "").toLowerCase();
-        const rewardId = ev?.reward?.id || "";
-        const login = ev?.user_login || "";
-        const matchesId = TWITCH_REWARD_ID && rewardId === TWITCH_REWARD_ID;
-        const matchesTitle = title === "first";
-        if ((matchesId || matchesTitle) && login) {
-          const result = await seAddPoints(login, 200);
-          logSpecialAward({
-            user: login,
-            drink: "channel-redeem:first",
-            amount: 200,
-            date: dateKeyNY(),
-            time: new Date().toISOString(),
-            awarded: result.ok,
-            status: result.status,
-            body: result.body,
-          });
-        }
-      }
-    } catch (e) {
-      console.error("EventSub handler error:", e);
-    }
-    return res.sendStatus(200);
-  }
-  return res.sendStatus(200);
-});
-
-
-// ===================== GRASS ENTREPRENEUR (revamped, short slugs) =====================
-// Flowers: short slugs & themed names
+// Flowers (short slugs)
 const FLOWER_LIST = [
   { slug:"haze",   name:"Acolyte Haze" },
   { slug:"og",     name:"Obsidian OG" },
@@ -448,7 +339,6 @@ const FLOWER_LIST = [
   { slug:"dream",  name:"Dathomir Dream" }
 ];
 
-// Build product catalog with the short slugs
 const PRODUCTS = {
   ...Object.fromEntries(
     FLOWER_LIST.map(f => [
@@ -456,13 +346,12 @@ const PRODUCTS = {
       { slug:f.slug, kind:"flower", unit:"oz", name:f.name, buyInc:8, consumeInc:2 }
     ])
   ),
-  brownies: { slug:"brownies", kind:"brownie", unit:"pcs", name:"Night Market Brownies", buyInc:10, consumeInc:1 },
-  gummies:  { slug:"gummies",  kind:"gummy",  unit:"pcs", name:"Crimson Citrus Gummies", buyInc:10, consumeInc:1 }
+  brownies: { slug:"brownies", kind:"brownies", unit:"pcs", name:"Night Market Brownies", buyInc:10, consumeInc:1 },
+  gummies:  { slug:"gummies",  kind:"gummies",  unit:"pcs", name:"Crimson Citrus Gummies", buyInc:10, consumeInc:1 }
 };
 
-// Storage: Map<userLower, Map<slug, number>>
+// Inventory: Map<userLower, Map<slug, qty>>
 const grassInv = new Map();
-
 const userKey = u => String(u || "").trim().toLowerCase();
 const getProduct = slug => PRODUCTS[String(slug || "").trim().toLowerCase()] || null;
 
@@ -526,29 +415,45 @@ function buildLinesForConsume({ user, product, left, used, actionWord }) {
 // Health
 app.get("/grass/health", (_req,res) => res.type("text/plain").send("grass: OK"));
 
-// BUY: /grass/buy?user=<u>&product=<slug>&mode=se|nb&key=SECRET
-app.get("/grass/buy", (req, res) => {
+// BUY flower: /grass/buy?user=&product=haze|...&mode=se|nb&key=SECRET
+app.get("/grass/buy", async (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   const user = (req.query.user || "").toString();
-  const product = getProduct(req.query.product);
   const mode = (req.query.mode || "").toString().toLowerCase();
-
+  const product = getProduct(req.query.product);
   if (!user || !product) return res.status(400).type("text/plain").send("Missing user or product");
 
-  const amount = product.buyInc; // fixed per rules
-  const newTotal = addInv(user, product.slug, amount);
-  const { seLine, nbLine } = buildLinesForBuy({ user, product, newTotal, amount });
+  // Nightbot: quip only, no charge, no state change
+  if (mode === "nb") {
+    const { nbLine } = buildLinesForBuy({ user, product, newTotal: 0, amount: product.buyInc });
+    return res.type("text/plain").send(nbLine);
+  }
 
-  if (mode === "se") return res.type("text/plain").send(seLine);
-  if (mode === "nb") return res.type("text/plain").send(nbLine);
-  return res.type("text/plain").send(`${seLine} ${nbLine}`);
+  // StreamElements: charge first
+  const cost =
+    product.kind === "flower" ? COSTS.flower :
+    product.kind === "brownies" ? COSTS.brownies :
+    product.kind === "gummies" ? COSTS.gummies : 0;
+
+  const charge = await seAddPoints(user, -cost);
+  if (!charge.ok) {
+    return res
+      .type("text/plain")
+      .send(`${user} tried to buy ${product.name} for ${cost} Distortion Dollars, but the purchase failed.`);
+  }
+
+  // On success: add inventory and announce
+  const newTotal = addInv(user, product.slug, product.buyInc);
+  const { seLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
+  return res.type("text/plain").send(seLine);
 });
 
-// ROLLUP (flowers): /grass/rollup?user=<u>&product=<slug optional>&mode=se|nb
+// ROLLUP (flowers): /grass/rollup?user=&product=<opt>&mode=se|nb&key=SECRET
 app.get("/grass/rollup", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   const user = (req.query.user || "").toString();
   let slug = (req.query.product || "").toString().toLowerCase();
+  const mode = (req.query.mode || "").toString().toLowerCase();
   if (!user) return res.status(400).type("text/plain").send("Missing user");
 
   let product = slug ? getProduct(slug) : null;
@@ -565,13 +470,12 @@ app.get("/grass/rollup", (req, res) => {
   if (!r.ok) return res.type("text/plain").send(`${user} doesn’t have enough ${product.name}. Need ${used}oz.`);
 
   const { seLine, nbLine } = buildLinesForConsume({ user, product, left: r.left, used, actionWord: "rolls up" });
-  const mode = (req.query.mode || "").toString().toLowerCase();
   if (mode === "se") return res.type("text/plain").send(seLine);
   if (mode === "nb") return res.type("text/plain").send(nbLine);
   return res.type("text/plain").send(`${seLine} ${nbLine}`);
 });
 
-// EAT brownie: /grass/eat?user=<u>&mode=se|nb
+// EAT brownie: /grass/eat?user=&mode=se|nb&key=SECRET
 app.get("/grass/eat", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   const user = (req.query.user || "").toString();
@@ -586,7 +490,7 @@ app.get("/grass/eat", (req, res) => {
   return res.type("text/plain").send(`${seLine} ${nbLine}`);
 });
 
-// CHEW gummy: /grass/chew?user=<u>&mode=se|nb
+// CHEW gummy: /grass/chew?user=&mode=se|nb&key=SECRET
 app.get("/grass/chew", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   const user = (req.query.user || "").toString();
@@ -601,30 +505,45 @@ app.get("/grass/chew", (req, res) => {
   return res.type("text/plain").send(`${seLine} ${nbLine}`);
 });
 
-// BUY edibles packs: /grass/buybrownies?user=...  /grass/buygummies?user=...
-app.get("/grass/buybrownies", (req, res) => {
+// BUY edibles packs (SE only should charge)
+app.get("/grass/buybrownies", async (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   const user = (req.query.user || "").toString();
+  const mode = (req.query.mode || "").toString().toLowerCase();
   if (!user) return res.status(400).type("text/plain").send("Missing user");
   const product = PRODUCTS["brownies"];
+
+  if (mode === "nb") {
+    const { nbLine } = buildLinesForBuy({ user, product, newTotal: 0, amount: product.buyInc });
+    return res.type("text/plain").send(nbLine);
+  }
+
+  const charge = await seAddPoints(user, -COSTS.brownies);
+  if (!charge.ok) return res.type("text/plain").send(`${user} tried to buy ${product.name} for ${COSTS.brownies}, but the purchase failed.`);
+
   const newTotal = addInv(user, "brownies", product.buyInc);
-  const { seLine, nbLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
-  const mode = (req.query.mode || "").toString().toLowerCase();
-  if (mode === "se") return res.type("text/plain").send(seLine);
-  if (mode === "nb") return res.type("text/plain").send(nbLine);
-  return res.type("text/plain").send(`${seLine} ${nbLine}`);
+  const { seLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
+  return res.type("text/plain").send(seLine);
 });
-app.get("/grass/buygummies", (req, res) => {
+
+app.get("/grass/buygummies", async (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   const user = (req.query.user || "").toString();
+  const mode = (req.query.mode || "").toString().toLowerCase();
   if (!user) return res.status(400).type("text/plain").send("Missing user");
   const product = PRODUCTS["gummies"];
+
+  if (mode === "nb") {
+    const { nbLine } = buildLinesForBuy({ user, product, newTotal: 0, amount: product.buyInc });
+    return res.type("text/plain").send(nbLine);
+  }
+
+  const charge = await seAddPoints(user, -COSTS.gummies);
+  if (!charge.ok) return res.type("text/plain").send(`${user} tried to buy ${product.name} for ${COSTS.gummies}, but the purchase failed.`);
+
   const newTotal = addInv(user, "gummies", product.buyInc);
-  const { seLine, nbLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
-  const mode = (req.query.mode || "").toString().toLowerCase();
-  if (mode === "se") return res.type("text/plain").send(seLine);
-  if (mode === "nb") return res.type("text/plain").send(nbLine);
-  return res.type("text/plain").send(`${seLine} ${nbLine}`);
+  const { seLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
+  return res.type("text/plain").send(seLine);
 });
 
 // Inventory view
@@ -642,16 +561,58 @@ app.get("/grass/inv", (req, res) => {
   res.type("text/plain").send(`${user} stash: ${parts.join(" | ")}`);
 });
 
-// Admin resets
+// Admin: reset grass
 app.get("/grass/reset", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   const user = (req.query.user || "").toString();
-  if (user) {
-    grassInv.delete(userKey(user));
-    return res.type("text/plain").send(`Cleared stash for ${user}.`);
-  }
+  if (user) { grassInv.delete(userKey(user)); return res.type("text/plain").send(`Cleared stash for ${user}.`); }
   grassInv.clear();
   res.type("text/plain").send("Cleared all stashes.");
+});
+
+// ---------------- Twitch EventSub (webhook) ----------------
+app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (req, res) => {
+  const msgId = req.header("twitch-eventsub-message-id");
+  const ts = req.header("twitch-eventsub-message-timestamp");
+  const sig = req.header("twitch-eventsub-message-signature");
+  if (!msgId || !ts || !sig) return res.status(400).send("missing headers");
+  const age = Math.abs(Date.now() - Date.parse(ts));
+  if (age > 10 * 60 * 1000) return res.status(403).send("stale");
+
+  const hmac = crypto.createHmac("sha256", TWITCH_EVENTSUB_SECRET);
+  hmac.update(msgId + ts + req.body);
+  const expected = "sha256=" + hmac.digest("hex");
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) return res.status(403).send("bad signature");
+  } catch { return res.status(403).send("bad signature"); }
+
+  const messageType = req.header("twitch-eventsub-message-type");
+  const payload = JSON.parse(req.body.toString("utf8"));
+  if (messageType === "webhook_callback_verification") return res.status(200).type("text/plain").send(payload.challenge);
+  if (messageType === "revocation") { console.warn("EventSub revoked:", payload?.subscription?.status); return res.sendStatus(200); }
+  if (messageType === "notification") {
+    try {
+      const subType = payload?.subscription?.type;
+      const ev = payload?.event;
+      if (subType === "channel.channel_points_custom_reward_redemption.add") {
+        const title = (ev?.reward?.title || "").toLowerCase();
+        const rewardId = ev?.reward?.id || "";
+        const login = ev?.user_login || "";
+        const matchesId = TWITCH_REWARD_ID && rewardId === TWITCH_REWARD_ID;
+        const matchesTitle = title === "first";
+        if ((matchesId || matchesTitle) && login) {
+          const result = await seAddPoints(login, 200);
+          logSpecialAward({
+            user: login, drink: "channel-redeem:first", amount: 200,
+            date: dateKeyNY(), time: new Date().toISOString(),
+            awarded: result.ok, status: result.status, body: result.body,
+          });
+        }
+      }
+    } catch (e) { console.error("EventSub handler error:", e); }
+    return res.sendStatus(200);
+  }
+  return res.sendStatus(200);
 });
 
 // ---------------- Start server ----------------
