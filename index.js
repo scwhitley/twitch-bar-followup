@@ -435,30 +435,29 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
 });
 
 
-// ===================== GRASS ENTREPRENEUR (revamped) =====================
-// All flower types + brownies + gummies.
-// Flowers: buy +8oz, roll up -2oz
-// Brownies: buy +10 (pieces), eat -1
-// Gummies: buy +10 (pieces), chew -1
-
-// Product catalog
+// ===================== GRASS ENTREPRENEUR (revamped, short slugs) =====================
+// Flowers: short slugs & themed names
 const FLOWER_LIST = [
-  { slug:"sithshade", name:"Sithshade Indica" },
-  { slug:"vadersbreath", name:"Vader’s Breath" },
-  { slug:"kyberkush", name:"Crimson Kyber Kush" },
-  { slug:"obsidianog", name:"Obsidian OG" },
-  { slug:"darksidediesel", name:"Dark Side Diesel" },
-  { slug:"acolytehaze", name:"Acolyte Haze" },
-  { slug:"phantomnebula", name:"Phantom Nebula" },
-  { slug:"dathomirdream", name:"Dathomir Dream" }
+  { slug:"haze",   name:"Acolyte Haze" },
+  { slug:"og",     name:"Obsidian OG" },
+  { slug:"kush",   name:"Crimson Kyber Kush" },
+  { slug:"shade",  name:"Sithshade Indica" },
+  { slug:"diesel", name:"Dark Side Diesel" },
+  { slug:"breath", name:"Vader’s Breath" },
+  { slug:"nebula", name:"Phantom Nebula" },
+  { slug:"dream",  name:"Dathomir Dream" }
 ];
 
+// Build product catalog with the short slugs
 const PRODUCTS = {
-  // Flowers: unit=oz, buyInc=8, consumeInc=2
-  ...Object.fromEntries(FLOWER_LIST.map(f => [f.slug, {kind:"flower", unit:"oz", name:f.name, buyInc:8, consumeInc:2}])),
-  // Edibles
-  brownies: { kind:"brownie", unit:"pcs", name:"Night Market Brownies", buyInc:10, consumeInc:1 },
-  gummies:  { kind:"gummy",  unit:"pcs", name:"Crimson Citrus Gummies", buyInc:10, consumeInc:1 }
+  ...Object.fromEntries(
+    FLOWER_LIST.map(f => [
+      f.slug,
+      { slug:f.slug, kind:"flower", unit:"oz", name:f.name, buyInc:8, consumeInc:2 }
+    ])
+  ),
+  brownies: { slug:"brownies", kind:"brownie", unit:"pcs", name:"Night Market Brownies", buyInc:10, consumeInc:1 },
+  gummies:  { slug:"gummies",  kind:"gummy",  unit:"pcs", name:"Crimson Citrus Gummies", buyInc:10, consumeInc:1 }
 };
 
 // Storage: Map<userLower, Map<slug, number>>
@@ -511,15 +510,16 @@ const ROLLUP_EFFECTS = [
   "nods to the beat like a sage."
 ];
 
-// Mode router (so SE and Nightbot can get different wording)
 function buildLinesForBuy({ user, product, newTotal, amount }) {
-  const seLine = `${user} has bought ${amount}${product.unit === "oz" ? "oz" : ""} of ${product.name}, they now have ${newTotal}${product.unit === "oz" ? "oz" : ""}.`;
+  const oz = product.unit === "oz" ? "oz" : "";
+  const seLine = `${user} has bought ${amount}${oz} of ${product.name}, they now have ${newTotal}${oz}.`;
   const nbLine = WEED_QUIPS[Math.floor(Math.random() * WEED_QUIPS.length)](user, product.name);
   return { seLine, nbLine };
 }
 function buildLinesForConsume({ user, product, left, used, actionWord }) {
-  const seLine = `${user} ${actionWord} ${product.name} (-${used}${product.unit === "oz" ? "oz" : ""}). They now have ${left}${product.unit === "oz" ? "oz" : ""}.`;
-  const nbLine = `${user} ${actionWord} ${product.name}. ${ROLLUP_EFFECTS[Math.floor(Math.random()*ROLLUP_EFFECTS.length)]} Remaining: ${left}${product.unit === "oz" ? "oz" : ""}.`;
+  const oz = product.unit === "oz" ? "oz" : "";
+  const seLine = `${user} ${actionWord} ${product.name} (-${used}${oz}). They now have ${left}${oz}.`;
+  const nbLine = `${user} ${actionWord} ${product.name}. ${ROLLUP_EFFECTS[Math.floor(Math.random()*ROLLUP_EFFECTS.length)]} Remaining: ${left}${oz}.`;
   return { seLine, nbLine };
 }
 
@@ -536,7 +536,7 @@ app.get("/grass/buy", (req, res) => {
   if (!user || !product) return res.status(400).type("text/plain").send("Missing user or product");
 
   const amount = product.buyInc; // fixed per rules
-  const newTotal = addInv(user, product.slug || req.query.product.toLowerCase(), amount);
+  const newTotal = addInv(user, product.slug, amount);
   const { seLine, nbLine } = buildLinesForBuy({ user, product, newTotal, amount });
 
   if (mode === "se") return res.type("text/plain").send(seLine);
@@ -562,8 +562,9 @@ app.get("/grass/rollup", (req, res) => {
 
   const used = product.consumeInc; // 2oz
   const r = subInv(user, slug, used);
-  const { seLine, nbLine } = buildLinesForConsume({ user, product, left: r.left, used, actionWord: "rolls up" });
   if (!r.ok) return res.type("text/plain").send(`${user} doesn’t have enough ${product.name}. Need ${used}oz.`);
+
+  const { seLine, nbLine } = buildLinesForConsume({ user, product, left: r.left, used, actionWord: "rolls up" });
   const mode = (req.query.mode || "").toString().toLowerCase();
   if (mode === "se") return res.type("text/plain").send(seLine);
   if (mode === "nb") return res.type("text/plain").send(nbLine);
@@ -576,7 +577,7 @@ app.get("/grass/eat", (req, res) => {
   const user = (req.query.user || "").toString();
   if (!user) return res.status(400).type("text/plain").send("Missing user");
   const product = PRODUCTS["brownies"];
-  const r = subInv(user, "brownies", product.consumeInc); // -1
+  const r = subInv(user, "brownies", product.consumeInc);
   if (!r.ok) return res.type("text/plain").send(`${user} has no ${product.name} to eat.`);
   const { seLine, nbLine } = buildLinesForConsume({ user, product, left: r.left, used: product.consumeInc, actionWord: "eats" });
   const mode = (req.query.mode || "").toString().toLowerCase();
@@ -591,7 +592,7 @@ app.get("/grass/chew", (req, res) => {
   const user = (req.query.user || "").toString();
   if (!user) return res.status(400).type("text/plain").send("Missing user");
   const product = PRODUCTS["gummies"];
-  const r = subInv(user, "gummies", product.consumeInc); // -1
+  const r = subInv(user, "gummies", product.consumeInc);
   if (!r.ok) return res.type("text/plain").send(`${user} has no ${product.name} to chew.`);
   const { seLine, nbLine } = buildLinesForConsume({ user, product, left: r.left, used: product.consumeInc, actionWord: "chews" });
   const mode = (req.query.mode || "").toString().toLowerCase();
@@ -606,7 +607,7 @@ app.get("/grass/buybrownies", (req, res) => {
   const user = (req.query.user || "").toString();
   if (!user) return res.status(400).type("text/plain").send("Missing user");
   const product = PRODUCTS["brownies"];
-  const newTotal = addInv(user, "brownies", product.buyInc); // +10
+  const newTotal = addInv(user, "brownies", product.buyInc);
   const { seLine, nbLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
   const mode = (req.query.mode || "").toString().toLowerCase();
   if (mode === "se") return res.type("text/plain").send(seLine);
@@ -618,7 +619,7 @@ app.get("/grass/buygummies", (req, res) => {
   const user = (req.query.user || "").toString();
   if (!user) return res.status(400).type("text/plain").send("Missing user");
   const product = PRODUCTS["gummies"];
-  const newTotal = addInv(user, "gummies", product.buyInc); // +10
+  const newTotal = addInv(user, "gummies", product.buyInc);
   const { seLine, nbLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
   const mode = (req.query.mode || "").toString().toLowerCase();
   if (mode === "se") return res.type("text/plain").send(seLine);
@@ -634,7 +635,7 @@ app.get("/grass/inv", (req, res) => {
   if (!bag || bag.size === 0) return res.type("text/plain").send(`${user} has no stash.`);
   const parts = [];
   for (const [slug, qty] of bag.entries()) {
-    const p = getProduct(slug) || { unit:"" , name: slug };
+    const p = getProduct(slug) || { unit:"", name: slug };
     const unit = p.unit === "oz" ? "oz" : "pcs";
     parts.push(`${qty}${unit} ${p.name}`);
   }
