@@ -6,16 +6,12 @@ import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
 const fetch = globalThis.fetch || undiciFetch;
 
-// ---------- Twitch config (EventSub + shared) ----------
+// ---------- Twitch EventSub config ----------
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID || "";
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET || "";
 const TWITCH_EVENTSUB_SECRET = process.env.TWITCH_EVENTSUB_SECRET || "";
 const TWITCH_BROADCASTER_ID = process.env.TWITCH_BROADCASTER_ID || "";
-const TWITCH_REWARD_ID = process.env.TWITCH_REWARD_ID || ""; // used by EventSub match
-
-// ---- Polling fallback (user token + reward id for "First") ----
-const TWITCH_USER_TOKEN = process.env.TWITCH_USER_TOKEN || "";            // user-scoped token w/ read+manage redemptions
-const TWITCH_REWARD_FIRST_ID = process.env.TWITCH_REWARD_FIRST_ID || "";  // reward id for "First"
+const TWITCH_REWARD_ID = process.env.TWITCH_REWARD_ID || ""; // optional
 
 // ---------- StreamElements Loyalty API (auto-award) ----------
 const SE_JWT = process.env.SE_JWT || "";
@@ -89,27 +85,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sample = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const randomBartenderName = () => `${sample(BARTENDER_FIRST)} ${sample(BARTENDER_LAST)}`;
 
-// -------- Daily Drink Special --------
-const DRINK_KEYS = ["vodka", "whiskey", "gin", "rum", "tequila", "lightbeer", "darkbeer", "redwine", "espresso", "bourbon"];
+// -------- Daily Drink Special (bar side) --------
+const DRINK_KEYS = ["vodka","whiskey","gin","rum","tequila","lightbeer","darkbeer","redwine","espresso","bourbon"];
 const DAILY_BONUS = 1000;
 const SPECIAL_SALT = process.env.SPECIAL_SALT || "distorted-realm-salt";
-const specialAwardedToday = new Set(); // user@YYYY-MM-DD -> true
 
-// helper: YYYY-MM-DD in America/New_York
 const dateKeyNY = () => {
   const now = new Date();
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .formatToParts(now)
-    .reduce((acc, p) => ((acc[p.type] = p.value), acc), {});
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
   return `${parts.year}-${parts.month}-${parts.day}`;
 };
-
-// simple deterministic hash → index
 function hashToIndex(str, mod) {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < str.length; i++) {
@@ -124,7 +112,7 @@ function getTodaysSpecial() {
   return { date: key, drink: DRINK_KEYS[idx] };
 }
 
-// ---------------- Quip pools ----------------
+// ---------------- Quip pools (bar) ----------------
 const LINES = [
   "Careful, that one's potent.",
   "Tip jar’s over there 👉 https://streamelements.com/d4rth_distortion/tip",
@@ -209,8 +197,7 @@ app.get("/special", (_req, res) => {
   res.type("text/plain").send(`Today's special (${date}) is: ${drink} (+${DAILY_BONUS})`);
 });
 
-// ---------------- FOLLOWUP (Nightbot uses for each drink) ----------------
-// Accepts: bare=1, user=<name>, drink=<slug>, delayMs, key=<shared>
+// ---------------- FOLLOWUP (Nightbot uses for drinks) ----------------
 app.get("/followup", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
@@ -226,11 +213,10 @@ app.get("/followup", async (req, res) => {
 
   await sleep(delayMs);
 
-  // just pick a quip — no drink tag at all
   const base = sample(LINES);
   const line = typeof base === "string" && base.trim() ? base : "Enjoy!";
 
-  // per-user drink counting + session total + milestones + DAILY SPECIAL
+  // per-user drink counting + milestones + daily special
   let tail = "";
   if (user && drink) {
     const count = bumpDrinkCount(user);
@@ -241,7 +227,6 @@ app.get("/followup", async (req, res) => {
     if (count === 7) tail += " Why are you crying and dancing on the table shirtless?";
     if (count === 10) tail += " 🚕 Call them an uber. Security get them out of here!";
 
-    // --- Daily Special check (one award per stream globally) ---
     const { date, drink: todaySpecial } = getTodaysSpecial();
     const flag = ensureSpecialFlagForToday();
     if (drink.toLowerCase() === todaySpecial) {
@@ -257,7 +242,7 @@ app.get("/followup", async (req, res) => {
   return res.type("text/plain").send(msg);
 });
 
-// ---------------- COMPLAINT (for !barcomplaint) ----------------
+// ---------------- COMPLAINT ----------------
 app.get("/complaint", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
@@ -267,7 +252,6 @@ app.get("/complaint", async (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
-
   await sleep(delayMs);
   const full = sample(COMPLAINTS)(user || "guest", issue);
   if (bare) {
@@ -277,7 +261,7 @@ app.get("/complaint", async (req, res) => {
   return res.type("text/plain").send(full);
 });
 
-// ---------------- FIRE PACK (for !fire) ----------------
+// ---------------- FIRE PACK ----------------
 app.get("/firepack", async (req, res) => {
   const user = (req.query.user || "").toString();
   const delayMs = Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
@@ -285,17 +269,14 @@ app.get("/firepack", async (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
-
   await sleep(delayMs);
-
   const storm = sample(STORM_OFF)(user || "the Realm");
   firedCount += 1;
   const hire = `A new bartender, ${randomBartenderName()}, has now taken over the Distorted Realm bar to better serve the Realm. (Fired so far: ${firedCount})`;
-
   return res.type("text/plain").send(`${storm} ${hire}`);
 });
 
-// ---------------- CHEERS (for !cheers) ----------------
+// ---------------- CHEERS ----------------
 app.get("/cheers", async (req, res) => {
   const bare = req.query.bare === "1";
   const user = (req.query.user || "").toString();
@@ -304,7 +285,6 @@ app.get("/cheers", async (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
-
   await sleep(delayMs);
   cheersCount += 1;
   const full = sample(CHEERS)(user || "friend");
@@ -315,13 +295,13 @@ app.get("/cheers", async (req, res) => {
   return res.type("text/plain").send(full);
 });
 
-// --- FIGHT tracking (silent; accepts multiple aliases) ---
+// --- FIGHT tracking (silent) ---
 const trackFightHandler = (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
   fightsCount += 1;
-  return res.status(204).send(); // no chat output
+  return res.status(204).send();
 };
 app.get("/trackfight", trackFightHandler);
 app.get("/trackfight2", trackFightHandler);
@@ -331,7 +311,6 @@ app.get("/track/fight", trackFightHandler);
 app.get("/firedcount", (_req, res) => {
   return res.type("text/plain").send(`Bartenders fired so far: ${firedCount}`);
 });
-
 app.get("/drinks", (req, res) => {
   const user = (req.query.user || "").toString();
   const k = keyUser(user);
@@ -339,23 +318,18 @@ app.get("/drinks", (req, res) => {
   const who = user || "Guest";
   res.type("text/plain").send(`${who} has ${n} drink${n === 1 ? "" : "s"} tonight.`);
 });
-
 app.get("/fightscount", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
   res.type("text/plain").send(`Fights so far: ${fightsCount}`);
 });
-
-// Quick peek at the last special award entry (mods only)
 app.get("/speciallast", (req, res) => {
   if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
     return res.status(401).type("text/plain").send("unauthorized");
   }
   try {
-    if (!fs.existsSync(AWARD_LOG_FILE)) {
-      return res.type("text/plain").send("No awards logged yet.");
-    }
+    if (!fs.existsSync(AWARD_LOG_FILE)) return res.type("text/plain").send("No awards logged yet.");
     const data = JSON.parse(fs.readFileSync(AWARD_LOG_FILE, "utf8"));
     const last = data[data.length - 1];
     if (!last) return res.type("text/plain").send("No awards logged yet.");
@@ -365,22 +339,51 @@ app.get("/speciallast", (req, res) => {
     return res.status(500).type("text/plain").send("Error reading last award");
   }
 });
+app.get("/end", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
+  const summary = `Session Summary: Bartenders fired: ${firedCount} | Drinks served: ${drinksServedCount} | Cheers given: ${cheersCount} | Fights broke out: ${fightsCount}`;
+  res.type("text/plain").send(summary);
+});
+app.get("/resetdrinks", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
+  const user = (req.query.user || "").toString();
+  if (user) {
+    drinkCounts.delete(keyUser(user));
+    return res.type("text/plain").send(`Reset drink counter for ${user}.`);
+  }
+  drinkCounts.clear();
+  res.type("text/plain").send("Reset all drink counters.");
+});
+app.get("/resetfired", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
+  firedCount = 0;
+  res.type("text/plain").send("Fired counter reset to 0");
+});
+app.get("/resetall", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
+  firedCount = 0; drinksServedCount = 0; cheersCount = 0; fightsCount = 0; drinkCounts.clear();
+  specialAward = { date: dateKeyNY(), awarded: false };
+  res.type("text/plain").send("All counters reset.");
+});
+app.get("/debug/award", async (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
+  const user = (req.query.user || "").toString();
+  const amount = parseInt(req.query.amount || "0", 10);
+  const result = await seAddPoints(user, amount);
+  return res.type("text/plain").send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
+});
 
 // ---------------- Twitch EventSub (webhook) ----------------
-// Use express.raw ONLY on this route so we can verify HMAC with the raw body
 app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (req, res) => {
-  // Verify Twitch HMAC signature
   const msgId = req.header("twitch-eventsub-message-id");
   const ts = req.header("twitch-eventsub-message-timestamp");
-  const sig = req.header("twitch-eventsub-message-signature"); // "sha256=..."
+  const sig = req.header("twitch-eventsub-message-signature");
   if (!msgId || !ts || !sig) return res.status(400).send("missing headers");
-
-  // Reject stale >10min
   const age = Math.abs(Date.now() - Date.parse(ts));
   if (age > 10 * 60 * 1000) return res.status(403).send("stale");
 
   const hmac = crypto.createHmac("sha256", TWITCH_EVENTSUB_SECRET);
-  hmac.update(msgId + ts + req.body); // raw Buffer
+  hmac.update(msgId + ts + req.body);
   const expected = "sha256=" + hmac.digest("hex");
   try {
     if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
@@ -392,7 +395,6 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
 
   const messageType = req.header("twitch-eventsub-message-type");
   const payload = JSON.parse(req.body.toString("utf8"));
-
   if (messageType === "webhook_callback_verification") {
     return res.status(200).type("text/plain").send(payload.challenge);
   }
@@ -407,10 +409,9 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
       if (subType === "channel.channel_points_custom_reward_redemption.add") {
         const title = (ev?.reward?.title || "").toLowerCase();
         const rewardId = ev?.reward?.id || "";
-        const login = ev?.user_login || ""; // lowercase
+        const login = ev?.user_login || "";
         const matchesId = TWITCH_REWARD_ID && rewardId === TWITCH_REWARD_ID;
         const matchesTitle = title === "first";
-
         if ((matchesId || matchesTitle) && login) {
           const result = await seAddPoints(login, 200);
           logSpecialAward({
@@ -430,307 +431,227 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
     }
     return res.sendStatus(200);
   }
-
   return res.sendStatus(200);
 });
 
-// ---- Helix poller helpers (fallback if EventSub hiccups) ----
-async function twitchHelix(path, opts = {}) {
-  if (!TWITCH_CLIENT_ID || !TWITCH_USER_TOKEN) {
-    throw new Error("twitch not configured");
-  }
-  const resp = await fetch(`https://api.twitch.tv/helix${path}`, {
-    ...opts,
-    headers: {
-      "Client-Id": TWITCH_CLIENT_ID,
-      "Authorization": `Bearer ${TWITCH_USER_TOKEN}`,
-      "Content-Type": "application/json",
-      ...(opts.headers || {})
-    }
-  });
-  const text = await resp.text();
-  let json;
-  try { json = JSON.parse(text); } catch { json = null; }
-  if (!resp.ok) throw new Error(`Helix ${path} ${resp.status}: ${text}`);
-  return json ?? {};
-}
 
-async function getUnfulfilledFirstRedemptions() {
-  if (!TWITCH_BROADCASTER_ID || !TWITCH_REWARD_FIRST_ID) return [];
-  const q = new URLSearchParams({
-    broadcaster_id: TWITCH_BROADCASTER_ID,
-    reward_id: TWITCH_REWARD_FIRST_ID,
-    status: "UNFULFILLED",
-    first: "50"
-  }).toString();
-  const data = await twitchHelix(`/channel_points/custom_rewards/redemptions?${q}`);
-  return data.data || [];
-}
+// ===================== GRASS ENTREPRENEUR (revamped) =====================
+// All flower types + brownies + gummies.
+// Flowers: buy +8oz, roll up -2oz
+// Brownies: buy +10 (pieces), eat -1
+// Gummies: buy +10 (pieces), chew -1
 
-async function fulfillRedemption(rewardId, redemptionId) {
-  const q = new URLSearchParams({
-    broadcaster_id: TWITCH_BROADCASTER_ID,
-    reward_id: rewardId,
-    id: redemptionId
-  }).toString();
-  await twitchHelix(`/channel_points/custom_rewards/redemptions?${q}`, {
-    method: "PATCH",
-    body: JSON.stringify({ status: "FULFILLED" })
-  });
-}
-
-const processedRedemptions = new Set();
-const FIRST_REDEEM_POINTS = 200;
-
-async function pollFirstRedeemsOnce() {
-  try {
-    if (!TWITCH_CLIENT_ID || !TWITCH_USER_TOKEN || !TWITCH_BROADCASTER_ID || !TWITCH_REWARD_FIRST_ID) {
-      return; // not configured yet
-    }
-    const items = await getUnfulfilledFirstRedemptions();
-    for (const r of items) {
-      const key = `${r.id}:${r.user_login}`;
-      if (processedRedemptions.has(key)) continue;
-
-      const login = (r.user_login || "").toLowerCase();
-      if (login) {
-        await seAddPoints(login, FIRST_REDEEM_POINTS);
-      }
-      await fulfillRedemption(r.reward.id, r.id);
-
-      processedRedemptions.add(key);
-      if (processedRedemptions.size > 5000) processedRedemptions.clear();
-    }
-  } catch (e) {
-    console.error("[first-redeem] poll error:", e.message);
-  }
-}
-
-// Start the lightweight polling loop + health route
-setInterval(pollFirstRedeemsOnce, 15000);
-app.get("/first/status", (_req, res) => {
-  const ready = !!(TWITCH_CLIENT_ID && TWITCH_USER_TOKEN && TWITCH_BROADCASTER_ID && TWITCH_REWARD_FIRST_ID);
-  res.type("text/plain").send(ready ? "first-poller: ready" : "first-poller: missing env");
-});
-
-// ---------------- End-of-stream summary ----------------
-app.get("/end", (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
-  const summary = `Session Summary: Bartenders fired: ${firedCount} | Drinks served: ${drinksServedCount} | Cheers given: ${cheersCount} | Fights broke out: ${fightsCount}`;
-  res.type("text/plain").send(summary);
-});
-
-// Admin resets
-app.get("/resetdrinks", (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
-  const user = (req.query.user || "").toString();
-  if (user) {
-    drinkCounts.delete(keyUser(user));
-    return res.type("text/plain").send(`Reset drink counter for ${user}.`);
-  }
-  drinkCounts.clear();
-  res.type("text/plain").send("Reset all drink counters.");
-});
-
-app.get("/resetfired", (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
-  firedCount = 0;
-  res.type("text/plain").send("Fired counter reset to 0");
-});
-
-app.get("/resetall", (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
-  firedCount = 0;
-  drinksServedCount = 0;
-  cheersCount = 0;
-  fightsCount = 0;
-  drinkCounts.clear();
-  specialAward = { date: dateKeyNY(), awarded: false };
-  res.type("text/plain").send("All counters reset.");
-});
-
-// DEBUG: award points manually
-app.get("/debug/award", async (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
-  const user = (req.query.user || "").toString();
-  const amount = parseInt(req.query.amount || "0", 10);
-  const result = await seAddPoints(user, amount);
-  return res
-    .type("text/plain")
-    .send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
-});
-
-// ---------------- GRASS ENTREPRENEUR SYSTEM ----------------
-// Inventory per user per product (in ounces)
-const weedInv = new Map(); // Map<userLower, Map<productSlug, ounces>>
-
-const WEED_PRODUCTS = {
-  flower: "Premium Flower",
-  gummy: "Citrus Gummies",
-  cart: "Vapor Cart",
-  brownie: "Chocolate Brownies",
-  tea: "Herbal Tea Blend",
-  preroll: "Hand-Rolled Pre-Roll",
-  tincture: "Mint Tincture",
-  cookies: "Butter Cookies",
-  soda: "Sparkling Seltzer",
-  balm: "Cooling Balm"
-};
-
-// PG quirky quips for purchases
-const WEED_QUIPS = [
-  (u,p) => `“Keep it discreet, ${u}. ${p} pairs well with lo-fi beats and good vibes.”`,
-  (u,p) => `“Bag secured. ${p} should last… unless chat shows up.”`,
-  (u,p) => `“Tip: ${p} is best enjoyed off-camera and with snacks nearby.”`,
-  (u,p) => `“Receipt printed invisibly. ${p} delivered with a nod.”`,
-  (u,p) => `“Remember: hydrate. ${p} respects responsible chill.”`
+// Product catalog
+const FLOWER_LIST = [
+  { slug:"sithshade", name:"Sithshade Indica" },
+  { slug:"vadersbreath", name:"Vader’s Breath" },
+  { slug:"kyberkush", name:"Crimson Kyber Kush" },
+  { slug:"obsidianog", name:"Obsidian OG" },
+  { slug:"darksidediesel", name:"Dark Side Diesel" },
+  { slug:"acolytehaze", name:"Acolyte Haze" },
+  { slug:"phantomnebula", name:"Phantom Nebula" },
+  { slug:"dathomirdream", name:"Dathomir Dream" }
 ];
 
-// effect lines for /rollup (Nightbot can output the remainder; SE can do its own RP line)
-const ROLLUP_EFFECTS = [
-  "exhales a perfect smoke ring and immediately contemplates the universe.",
-  "blinks slowly, nods to the beat, and discovers a new favorite emote.",
-  "decides snacks are a top-priority quest.",
-  "stares at the stream overlay like it’s ancient art.",
-  "laughs at absolutely nothing for 12 seconds, then forgets why."
-];
-
-// helpers
-const keyUserLower = u => String(u || "").trim().toLowerCase();
-const toSafeProduct = p => {
-  const k = String(p || "").trim().toLowerCase();
-  return WEED_PRODUCTS[k] ? k : null;
+const PRODUCTS = {
+  // Flowers: unit=oz, buyInc=8, consumeInc=2
+  ...Object.fromEntries(FLOWER_LIST.map(f => [f.slug, {kind:"flower", unit:"oz", name:f.name, buyInc:8, consumeInc:2}])),
+  // Edibles
+  brownies: { kind:"brownie", unit:"pcs", name:"Night Market Brownies", buyInc:10, consumeInc:1 },
+  gummies:  { kind:"gummy",  unit:"pcs", name:"Crimson Citrus Gummies", buyInc:10, consumeInc:1 }
 };
-const displayProduct = slug => WEED_PRODUCTS[slug] || slug;
 
-// mutate inventory
-function addWeed(user, productSlug, ounces) {
-  const u = keyUserLower(user);
-  if (!u || !productSlug || ounces <= 0) return 0;
-  if (!weedInv.has(u)) weedInv.set(u, new Map());
-  const bag = weedInv.get(u);
-  const next = (bag.get(productSlug) || 0) + ounces;
-  bag.set(productSlug, next);
+// Storage: Map<userLower, Map<slug, number>>
+const grassInv = new Map();
+
+const userKey = u => String(u || "").trim().toLowerCase();
+const getProduct = slug => PRODUCTS[String(slug || "").trim().toLowerCase()] || null;
+
+function addInv(user, slug, amount) {
+  const u = userKey(user); if (!u) return 0;
+  if (!grassInv.has(u)) grassInv.set(u, new Map());
+  const bag = grassInv.get(u);
+  const next = (bag.get(slug) || 0) + amount;
+  bag.set(slug, next);
   return next;
 }
-function consumeWeed(user, productSlug, ounces) {
-  const u = keyUserLower(user);
-  if (!u || !productSlug || ounces <= 0) return { ok:false, left:0 };
-  const bag = weedInv.get(u);
-  if (!bag) return { ok:false, left:0 };
-  const have = bag.get(productSlug) || 0;
-  if (have < ounces) return { ok:false, left:have };
-  const left = have - ounces;
-  if (left === 0) bag.delete(productSlug); else bag.set(productSlug, left);
-  if (bag.size === 0) weedInv.delete(u);
+function subInv(user, slug, amount) {
+  const u = userKey(user); if (!u) return { ok:false, left:0 };
+  const bag = grassInv.get(u); if (!bag) return { ok:false, left:0 };
+  const have = bag.get(slug) || 0;
+  if (have < amount) return { ok:false, left:have };
+  const left = have - amount;
+  if (left === 0) bag.delete(slug); else bag.set(slug, left);
+  if (bag.size === 0) grassInv.delete(u);
   return { ok:true, left };
 }
-function biggestProductFor(user) {
-  const u = keyUserLower(user);
-  const bag = weedInv.get(u);
-  if (!bag) return null;
+function biggestFlowerSlug(user) {
+  const u = userKey(user);
+  const bag = grassInv.get(u); if (!bag) return null;
   let best = null, max = -1;
-  for (const [slug, oz] of bag.entries()) {
-    if (oz > max) { max = oz; best = slug; }
+  for (const [slug, qty] of bag.entries()) {
+    const p = getProduct(slug);
+    if (p?.kind === "flower" && qty > max) { best = slug; max = qty; }
   }
   return best;
 }
 
-// Random 8oz increment: 8,16,24,32 (tweak as you want)
-function randomEightOz() {
-  const choices = [8, 16, 24, 32];
-  return choices[Math.floor(Math.random()*choices.length)];
+const WEED_QUIPS = [
+  (u,p) => `“Keep it discreet, ${u}. ${p} pairs with lo-fi beats and good vibes.”`,
+  (u,p) => `“Shadow vendor nods. ${p} acquired; snacks recommended.”`,
+  (u,p) => `“Receipt printed in Sith ink. ${p} secured.”`,
+  (u,p) => `“Be wise, ${u}. ${p} respects responsible chill.”`,
+  (u,p) => `“Stocked up. ${p} unlocks +2 Vibes.”`
+];
+const ROLLUP_EFFECTS = [
+  "exhales a perfect ring and contemplates the galaxy.",
+  "finds the overlay surprisingly profound.",
+  "initiates Operation: Snack Run.",
+  "laughs at a silent meme for 12 seconds.",
+  "nods to the beat like a sage."
+];
+
+// Mode router (so SE and Nightbot can get different wording)
+function buildLinesForBuy({ user, product, newTotal, amount }) {
+  const seLine = `${user} has bought ${amount}${product.unit === "oz" ? "oz" : ""} of ${product.name}, they now have ${newTotal}${product.unit === "oz" ? "oz" : ""}.`;
+  const nbLine = WEED_QUIPS[Math.floor(Math.random() * WEED_QUIPS.length)](user, product.name);
+  return { seLine, nbLine };
+}
+function buildLinesForConsume({ user, product, left, used, actionWord }) {
+  const seLine = `${user} ${actionWord} ${product.name} (-${used}${product.unit === "oz" ? "oz" : ""}). They now have ${left}${product.unit === "oz" ? "oz" : ""}.`;
+  const nbLine = `${user} ${actionWord} ${product.name}. ${ROLLUP_EFFECTS[Math.floor(Math.random()*ROLLUP_EFFECTS.length)]} Remaining: ${left}${product.unit === "oz" ? "oz" : ""}.`;
+  return { seLine, nbLine };
 }
 
-// Health peeks
+// Health
 app.get("/grass/health", (_req,res) => res.type("text/plain").send("grass: OK"));
 
-// BUY endpoint (Nightbot alias per product)
-app.get("/grass/buy", async (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
+// BUY: /grass/buy?user=<u>&product=<slug>&mode=se|nb&key=SECRET
+app.get("/grass/buy", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   const user = (req.query.user || "").toString();
-  const product = toSafeProduct(req.query.product);
+  const product = getProduct(req.query.product);
+  const mode = (req.query.mode || "").toString().toLowerCase();
+
   if (!user || !product) return res.status(400).type("text/plain").send("Missing user or product");
 
-  // amount can be supplied (must be multiple of 8), else random 8,16,24,32
-  let amount = parseInt(req.query.amount || "", 10);
-  if (!Number.isInteger(amount) || amount <= 0 || amount % 8 !== 0) amount = randomEightOz();
+  const amount = product.buyInc; // fixed per rules
+  const newTotal = addInv(user, product.slug || req.query.product.toLowerCase(), amount);
+  const { seLine, nbLine } = buildLinesForBuy({ user, product, newTotal, amount });
 
-  const total = addWeed(user, product, amount);
-  const nice = displayProduct(product);
-  const quip = WEED_QUIPS[Math.floor(Math.random()*WEED_QUIPS.length)](user, nice);
-
-  // Chat line Nightbot prints
-  // e.g. "Shadow vendor hands Stephen 16oz of Premium Flower. Keep it discreet..."
-  const msg = `Shadow vendor hands ${user} ${amount}oz of ${nice}. ${quip} Inventory: ${total}oz of ${nice}.`;
-  return res.type("text/plain").send(msg);
+  if (mode === "se") return res.type("text/plain").send(seLine);
+  if (mode === "nb") return res.type("text/plain").send(nbLine);
+  return res.type("text/plain").send(`${seLine} ${nbLine}`);
 });
 
-// ROLLUP endpoint: deduct 2oz from a specified product, or largest if omitted
-// Returns a clean line Nightbot can print with remaining
-app.get("/grass/rollup", async (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
+// ROLLUP (flowers): /grass/rollup?user=<u>&product=<slug optional>&mode=se|nb
+app.get("/grass/rollup", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   const user = (req.query.user || "").toString();
-  let product = toSafeProduct(req.query.product);
+  let slug = (req.query.product || "").toString().toLowerCase();
   if (!user) return res.status(400).type("text/plain").send("Missing user");
 
-  if (!product) product = biggestProductFor(user);
-  if (!product) return res.type("text/plain").send(`${user} has no stash to roll up.`);
-
-  const useOz = 2;
-  const result = consumeWeed(user, product, useOz);
-  const nice = displayProduct(product);
-  if (!result.ok) {
-    return res.type("text/plain").send(`${user} doesn’t have enough ${nice}. Need ${useOz}oz.`);
+  let product = slug ? getProduct(slug) : null;
+  if (!product) {
+    const best = biggestFlowerSlug(user);
+    if (!best) return res.type("text/plain").send(`${user} has no flower to roll up.`);
+    product = getProduct(best);
+    slug = best;
   }
+  if (product.kind !== "flower") return res.type("text/plain").send("That item isn’t rollable flower.");
 
-  const effect = ROLLUP_EFFECTS[Math.floor(Math.random()*ROLLUP_EFFECTS.length)];
-  // Two-part vibe is nice, but keep to one line for Nightbot
-  const msg = `${user} lights up their ${nice} (-${useOz}oz). ${effect} Remaining: ${result.left}oz ${nice}.`;
-  return res.type("text/plain").send(msg);
+  const used = product.consumeInc; // 2oz
+  const r = subInv(user, slug, used);
+  const { seLine, nbLine } = buildLinesForConsume({ user, product, left: r.left, used, actionWord: "rolls up" });
+  if (!r.ok) return res.type("text/plain").send(`${user} doesn’t have enough ${product.name}. Need ${used}oz.`);
+  const mode = (req.query.mode || "").toString().toLowerCase();
+  if (mode === "se") return res.type("text/plain").send(seLine);
+  if (mode === "nb") return res.type("text/plain").send(nbLine);
+  return res.type("text/plain").send(`${seLine} ${nbLine}`);
 });
 
-// INVENTORY peek: /grass/inv?user=NAME
+// EAT brownie: /grass/eat?user=<u>&mode=se|nb
+app.get("/grass/eat", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
+  const user = (req.query.user || "").toString();
+  if (!user) return res.status(400).type("text/plain").send("Missing user");
+  const product = PRODUCTS["brownies"];
+  const r = subInv(user, "brownies", product.consumeInc); // -1
+  if (!r.ok) return res.type("text/plain").send(`${user} has no ${product.name} to eat.`);
+  const { seLine, nbLine } = buildLinesForConsume({ user, product, left: r.left, used: product.consumeInc, actionWord: "eats" });
+  const mode = (req.query.mode || "").toString().toLowerCase();
+  if (mode === "se") return res.type("text/plain").send(seLine);
+  if (mode === "nb") return res.type("text/plain").send(nbLine);
+  return res.type("text/plain").send(`${seLine} ${nbLine}`);
+});
+
+// CHEW gummy: /grass/chew?user=<u>&mode=se|nb
+app.get("/grass/chew", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
+  const user = (req.query.user || "").toString();
+  if (!user) return res.status(400).type("text/plain").send("Missing user");
+  const product = PRODUCTS["gummies"];
+  const r = subInv(user, "gummies", product.consumeInc); // -1
+  if (!r.ok) return res.type("text/plain").send(`${user} has no ${product.name} to chew.`);
+  const { seLine, nbLine } = buildLinesForConsume({ user, product, left: r.left, used: product.consumeInc, actionWord: "chews" });
+  const mode = (req.query.mode || "").toString().toLowerCase();
+  if (mode === "se") return res.type("text/plain").send(seLine);
+  if (mode === "nb") return res.type("text/plain").send(nbLine);
+  return res.type("text/plain").send(`${seLine} ${nbLine}`);
+});
+
+// BUY edibles packs: /grass/buybrownies?user=...  /grass/buygummies?user=...
+app.get("/grass/buybrownies", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
+  const user = (req.query.user || "").toString();
+  if (!user) return res.status(400).type("text/plain").send("Missing user");
+  const product = PRODUCTS["brownies"];
+  const newTotal = addInv(user, "brownies", product.buyInc); // +10
+  const { seLine, nbLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
+  const mode = (req.query.mode || "").toString().toLowerCase();
+  if (mode === "se") return res.type("text/plain").send(seLine);
+  if (mode === "nb") return res.type("text/plain").send(nbLine);
+  return res.type("text/plain").send(`${seLine} ${nbLine}`);
+});
+app.get("/grass/buygummies", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
+  const user = (req.query.user || "").toString();
+  if (!user) return res.status(400).type("text/plain").send("Missing user");
+  const product = PRODUCTS["gummies"];
+  const newTotal = addInv(user, "gummies", product.buyInc); // +10
+  const { seLine, nbLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
+  const mode = (req.query.mode || "").toString().toLowerCase();
+  if (mode === "se") return res.type("text/plain").send(seLine);
+  if (mode === "nb") return res.type("text/plain").send(nbLine);
+  return res.type("text/plain").send(`${seLine} ${nbLine}`);
+});
+
+// Inventory view
 app.get("/grass/inv", (req, res) => {
   const user = (req.query.user || "").toString();
   if (!user) return res.status(400).type("text/plain").send("Missing user");
-  const bag = weedInv.get(keyUserLower(user));
+  const bag = grassInv.get(userKey(user));
   if (!bag || bag.size === 0) return res.type("text/plain").send(`${user} has no stash.`);
   const parts = [];
-  for (const [slug, oz] of bag.entries()) parts.push(`${oz}oz ${displayProduct(slug)}`);
+  for (const [slug, qty] of bag.entries()) {
+    const p = getProduct(slug) || { unit:"" , name: slug };
+    const unit = p.unit === "oz" ? "oz" : "pcs";
+    parts.push(`${qty}${unit} ${p.name}`);
+  }
   res.type("text/plain").send(`${user} stash: ${parts.join(" | ")}`);
 });
 
 // Admin resets
-// /grass/reset?key=SECRET                -> clear all
-// /grass/reset?user=NAME&key=SECRET      -> clear one user
 app.get("/grass/reset", (req, res) => {
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
-    return res.status(401).type("text/plain").send("unauthorized");
-  }
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) return res.status(401).type("text/plain").send("unauthorized");
   const user = (req.query.user || "").toString();
   if (user) {
-    weedInv.delete(keyUserLower(user));
+    grassInv.delete(userKey(user));
     return res.type("text/plain").send(`Cleared stash for ${user}.`);
   }
-  weedInv.clear();
+  grassInv.clear();
   res.type("text/plain").send("Cleared all stashes.");
 });
-
 
 // ---------------- Start server ----------------
 const PORT = process.env.PORT || 3000;
