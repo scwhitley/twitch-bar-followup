@@ -570,6 +570,168 @@ app.get("/debug/award", async (req, res) => {
     .send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
 });
 
+// ---------------- GRASS ENTREPRENEUR SYSTEM ----------------
+// Inventory per user per product (in ounces)
+const weedInv = new Map(); // Map<userLower, Map<productSlug, ounces>>
+
+const WEED_PRODUCTS = {
+  flower: "Premium Flower",
+  gummy: "Citrus Gummies",
+  cart: "Vapor Cart",
+  brownie: "Chocolate Brownies",
+  tea: "Herbal Tea Blend",
+  preroll: "Hand-Rolled Pre-Roll",
+  tincture: "Mint Tincture",
+  cookies: "Butter Cookies",
+  soda: "Sparkling Seltzer",
+  balm: "Cooling Balm"
+};
+
+// PG quirky quips for purchases
+const WEED_QUIPS = [
+  (u,p) => `“Keep it discreet, ${u}. ${p} pairs well with lo-fi beats and good vibes.”`,
+  (u,p) => `“Bag secured. ${p} should last… unless chat shows up.”`,
+  (u,p) => `“Tip: ${p} is best enjoyed off-camera and with snacks nearby.”`,
+  (u,p) => `“Receipt printed invisibly. ${p} delivered with a nod.”`,
+  (u,p) => `“Remember: hydrate. ${p} respects responsible chill.”`
+];
+
+// effect lines for /rollup (Nightbot can output the remainder; SE can do its own RP line)
+const ROLLUP_EFFECTS = [
+  "exhales a perfect smoke ring and immediately contemplates the universe.",
+  "blinks slowly, nods to the beat, and discovers a new favorite emote.",
+  "decides snacks are a top-priority quest.",
+  "stares at the stream overlay like it’s ancient art.",
+  "laughs at absolutely nothing for 12 seconds, then forgets why."
+];
+
+// helpers
+const keyUserLower = u => String(u || "").trim().toLowerCase();
+const toSafeProduct = p => {
+  const k = String(p || "").trim().toLowerCase();
+  return WEED_PRODUCTS[k] ? k : null;
+};
+const displayProduct = slug => WEED_PRODUCTS[slug] || slug;
+
+// mutate inventory
+function addWeed(user, productSlug, ounces) {
+  const u = keyUserLower(user);
+  if (!u || !productSlug || ounces <= 0) return 0;
+  if (!weedInv.has(u)) weedInv.set(u, new Map());
+  const bag = weedInv.get(u);
+  const next = (bag.get(productSlug) || 0) + ounces;
+  bag.set(productSlug, next);
+  return next;
+}
+function consumeWeed(user, productSlug, ounces) {
+  const u = keyUserLower(user);
+  if (!u || !productSlug || ounces <= 0) return { ok:false, left:0 };
+  const bag = weedInv.get(u);
+  if (!bag) return { ok:false, left:0 };
+  const have = bag.get(productSlug) || 0;
+  if (have < ounces) return { ok:false, left:have };
+  const left = have - ounces;
+  if (left === 0) bag.delete(productSlug); else bag.set(productSlug, left);
+  if (bag.size === 0) weedInv.delete(u);
+  return { ok:true, left };
+}
+function biggestProductFor(user) {
+  const u = keyUserLower(user);
+  const bag = weedInv.get(u);
+  if (!bag) return null;
+  let best = null, max = -1;
+  for (const [slug, oz] of bag.entries()) {
+    if (oz > max) { max = oz; best = slug; }
+  }
+  return best;
+}
+
+// Random 8oz increment: 8,16,24,32 (tweak as you want)
+function randomEightOz() {
+  const choices = [8, 16, 24, 32];
+  return choices[Math.floor(Math.random()*choices.length)];
+}
+
+// Health peeks
+app.get("/grass/health", (_req,res) => res.type("text/plain").send("grass: OK"));
+
+// BUY endpoint (Nightbot alias per product)
+app.get("/grass/buy", async (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  const user = (req.query.user || "").toString();
+  const product = toSafeProduct(req.query.product);
+  if (!user || !product) return res.status(400).type("text/plain").send("Missing user or product");
+
+  // amount can be supplied (must be multiple of 8), else random 8,16,24,32
+  let amount = parseInt(req.query.amount || "", 10);
+  if (!Number.isInteger(amount) || amount <= 0 || amount % 8 !== 0) amount = randomEightOz();
+
+  const total = addWeed(user, product, amount);
+  const nice = displayProduct(product);
+  const quip = WEED_QUIPS[Math.floor(Math.random()*WEED_QUIPS.length)](user, nice);
+
+  // Chat line Nightbot prints
+  // e.g. "Shadow vendor hands Stephen 16oz of Premium Flower. Keep it discreet..."
+  const msg = `Shadow vendor hands ${user} ${amount}oz of ${nice}. ${quip} Inventory: ${total}oz of ${nice}.`;
+  return res.type("text/plain").send(msg);
+});
+
+// ROLLUP endpoint: deduct 2oz from a specified product, or largest if omitted
+// Returns a clean line Nightbot can print with remaining
+app.get("/grass/rollup", async (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  const user = (req.query.user || "").toString();
+  let product = toSafeProduct(req.query.product);
+  if (!user) return res.status(400).type("text/plain").send("Missing user");
+
+  if (!product) product = biggestProductFor(user);
+  if (!product) return res.type("text/plain").send(`${user} has no stash to roll up.`);
+
+  const useOz = 2;
+  const result = consumeWeed(user, product, useOz);
+  const nice = displayProduct(product);
+  if (!result.ok) {
+    return res.type("text/plain").send(`${user} doesn’t have enough ${nice}. Need ${useOz}oz.`);
+  }
+
+  const effect = ROLLUP_EFFECTS[Math.floor(Math.random()*ROLLUP_EFFECTS.length)];
+  // Two-part vibe is nice, but keep to one line for Nightbot
+  const msg = `${user} lights up their ${nice} (-${useOz}oz). ${effect} Remaining: ${result.left}oz ${nice}.`;
+  return res.type("text/plain").send(msg);
+});
+
+// INVENTORY peek: /grass/inv?user=NAME
+app.get("/grass/inv", (req, res) => {
+  const user = (req.query.user || "").toString();
+  if (!user) return res.status(400).type("text/plain").send("Missing user");
+  const bag = weedInv.get(keyUserLower(user));
+  if (!bag || bag.size === 0) return res.type("text/plain").send(`${user} has no stash.`);
+  const parts = [];
+  for (const [slug, oz] of bag.entries()) parts.push(`${oz}oz ${displayProduct(slug)}`);
+  res.type("text/plain").send(`${user} stash: ${parts.join(" | ")}`);
+});
+
+// Admin resets
+// /grass/reset?key=SECRET                -> clear all
+// /grass/reset?user=NAME&key=SECRET      -> clear one user
+app.get("/grass/reset", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+  const user = (req.query.user || "").toString();
+  if (user) {
+    weedInv.delete(keyUserLower(user));
+    return res.type("text/plain").send(`Cleared stash for ${user}.`);
+  }
+  weedInv.clear();
+  res.type("text/plain").send("Cleared all stashes.");
+});
+
+
 // ---------------- Start server ----------------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
