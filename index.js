@@ -427,7 +427,9 @@ function biggestFlowerSlug(user) {
 const WEED_QUIPS = [
   (u,p) => `“Keep it discreet, ${u}. ${p} pairs with lo-fi beats and good vibes.”`,
   (u,p) => `“Shadow vendor nods. ${p} acquired; snacks recommended.”`,
-  (u,p) => `“Receipt printed in Sith ink. ${p} secured.”`,
+  (u,p) => `“Be wise, ${u}. ${p} respects responsible chill.”`,
+  (u,p) => `“Ay cuz, ${u} who sent you here????. you the feds?? nah you give good vibes. Heres the ${p}, now get outta here.”`,
+  (u,p) => `“Be careful, ${u}. Too much of that ${p} will have buck naked in the middle of rush our traffic singing Celine Dion”`,
   (u,p) => `“Be wise, ${u}. ${p} respects responsible chill.”`,
   (u,p) => `“Stocked up. ${p} unlocks +2 Vibes.”`
 ];
@@ -436,6 +438,9 @@ const ROLLUP_EFFECTS = [
   "finds the overlay surprisingly profound.",
   "initiates Operation: Snack Run.",
   "laughs at a silent meme for 12 seconds.",
+  "stares into the void of the realm.",
+  "laughs at a silent meme for 12 seconds.",
+  "starts to think very philosophical thoughts.",
   "nods to the beat like a sage."
 ];
 
