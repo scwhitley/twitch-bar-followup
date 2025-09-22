@@ -135,6 +135,8 @@ const STORM_OFF = [
   (user) => `“I’m unionized with the Sith now,” the bartender hisses at ${user} before force-sliding out.`,
   (user) => `The bartender flips a coaster at ${user} like a ninja star and vanishes into the night.`,
   (user) => `Keys slam. “I quit this pixel bar,” they snarl at ${user}, exiting stage left in dramatic fashion.`,
+  (user) => `Bartender burst into teers. “Now my pet giraffe won't have any oranges to eat! ,” they give sad puppy eyes at ${user}, and skidaddles out of the bar.`,
+  (user) => `They snicker. “Me? Fired? You know you done fucked up right? Huh? Thats cool, I"m finna get the toolie and air dis bitch out, hold tight.” they do the gun fingers at ${user}, and bop out the back door.`,
 ];
 
 const CHEERS = [
@@ -143,6 +145,8 @@ const CHEERS = [
   (user) => `Bartender to ${user}: “Verified: you have excellent taste and impeccable vibes.”`,
   (user) => `Bartender to ${user}: “Gratitude noted. Hydration and happiness incoming.”`,
   (user) => `Bartender to ${user}: “Thanks fam. Tip jar smiles upon you.”`,
+  (user) => `Bartender to ${user}: “Can you tell D4rth Distortion I got a good review?”`,
+  (user) => `Bartender to ${user}: “Gee wilikers pal thank you very much! That was a splendifurous thing to say! Neato dude!”`,
 ];
 
 // ---------------- State counters ----------------
@@ -389,7 +393,7 @@ const WEED_QUIPS = [
   (u,p) => `“Shadow vendor nods. ${p} acquired; snacks recommended.”`,
   (u,p) => `“Receipt printed in Sith ink. ${p} secured.”`,
   (u,p) => `“Be wise, ${u}. ${p} respects responsible chill.”`,
-  (u,p) => `“Stocked up. ${p} unlocks +2 Vibes.”`
+  (u,p) => `“Stocked up. ${p} unlocks +2 Vibes.”`yu
 ];
 const ROLLUP_EFFECTS = [
   "exhales a perfect ring and contemplates the galaxy.",
