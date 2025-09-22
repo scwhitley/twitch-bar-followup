@@ -51,6 +51,42 @@ async function seAddPoints(username, amount) {
   }
 }
 
+/** Fetch a user's current SE points balance */
+async function seGetPoints(username) {
+  const cleanUser = String(username || "").replace(/^@/, "").trim().toLowerCase();
+  if (!SE_JWT || !SE_CHANNEL_ID || !cleanUser) {
+    return { ok: false, points: null, status: 0, body: "missing params/env" };
+  }
+  const url = `https://api.streamelements.com/kappa/v2/points/${encodeURIComponent(
+    SE_CHANNEL_ID
+  )}/${encodeURIComponent(cleanUser)}`;
+
+  try {
+    const resp = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${SE_JWT}`, Accept: "application/json" },
+    });
+    const text = await resp.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch {}
+    const points =
+      (json && (json.points ?? json.total ?? json.current ?? json.amount)) ?? null;
+
+    return { ok: resp.ok, points, status: resp.status, body: text.slice(0, 300) };
+  } catch (err) {
+    return { ok: false, points: null, status: -1, body: String(err).slice(0, 300) };
+  }
+}
+
+/** Balance suffix helper (safe fallback to empty) */
+async function balanceSuffix(username) {
+  const r = await seGetPoints(username);
+  if (r.ok && typeof r.points === "number") {
+    return ` You now have ${r.points} Distortion Dollars.`;
+  }
+  return "";
+}
+
 /** Fire-and-forget SE award (used for daily special bonus logging) */
 function awardAndLogLater(user, drink, date, amount) {
   setImmediate(async () => {
@@ -393,7 +429,7 @@ const WEED_QUIPS = [
   (u,p) => `“Shadow vendor nods. ${p} acquired; snacks recommended.”`,
   (u,p) => `“Receipt printed in Sith ink. ${p} secured.”`,
   (u,p) => `“Be wise, ${u}. ${p} respects responsible chill.”`,
-  (u,p) => `“Stocked up. ${p} unlocks +2 Vibes.”`yu
+  (u,p) => `“Stocked up. ${p} unlocks +2 Vibes.”`
 ];
 const ROLLUP_EFFECTS = [
   "exhales a perfect ring and contemplates the galaxy.",
@@ -446,10 +482,11 @@ app.get("/grass/buy", async (req, res) => {
       .send(`${user} tried to buy ${product.name} for ${cost} Distortion Dollars, but the purchase failed.`);
   }
 
-  // On success: add inventory and announce
+  // On success: add inventory and announce + balance
   const newTotal = addInv(user, product.slug, product.buyInc);
   const { seLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
-  return res.type("text/plain").send(seLine);
+  const balText = await balanceSuffix(user);
+  return res.type("text/plain").send(seLine + balText);
 });
 
 // ROLLUP (flowers): /grass/rollup?user=&product=<opt>&mode=se|nb&key=SECRET
@@ -527,7 +564,8 @@ app.get("/grass/buybrownies", async (req, res) => {
 
   const newTotal = addInv(user, "brownies", product.buyInc);
   const { seLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
-  return res.type("text/plain").send(seLine);
+  const balText = await balanceSuffix(user);
+  return res.type("text/plain").send(seLine + balText);
 });
 
 app.get("/grass/buygummies", async (req, res) => {
@@ -547,7 +585,8 @@ app.get("/grass/buygummies", async (req, res) => {
 
   const newTotal = addInv(user, "gummies", product.buyInc);
   const { seLine } = buildLinesForBuy({ user, product, newTotal, amount: product.buyInc });
-  return res.type("text/plain").send(seLine);
+  const balText = await balanceSuffix(user);
+  return res.type("text/plain").send(seLine + balText);
 });
 
 // Inventory view
