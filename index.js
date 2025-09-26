@@ -220,14 +220,18 @@ const CHEERS = [
 
 // ---------------- Flight Attendant Firepack ----------------
 const FLIGHT_STORM_OFF = [
-  (user) => `The flight attendant glares at ${user}, rips off the neck scarf, and storms down the aisle screaming “Y’all don’t deserve me!”`,
-  (user) => `Flight attendant yeets the snack tray, mutters something unholy about ${user}, and moonwalks into the cockpit.`,
-  (user) => `“I’m unionized with the Sith now,” the attendant hisses at ${user} before force-sliding out the emergency exit.`,
-  (user) => `The attendant flips a peanut packet at ${user} like a ninja star and vanishes into the clouds.`,
-  (user) => `Keys slam. “I quit this pixel airline,” they snarl at ${user}, exiting stage left with dramatic turbulence.`,
-  (user) => `Flight attendant bursts into tears. “Now my pet giraffe won’t have any oranges to eat!” They give sad puppy eyes at ${user} and skidaddle into the galley.`,
-  (user) => `They snicker. “Me? Fired? You know you done messed up right? Huh? That’s cool, I’m finna get the toolie and air dis plane out, hold tight.” They do the gun fingers at ${user} and bop out the back hatch.`,
+  (user) => `The flight attendant was mid-rant about ${user} asking for extra peanuts when D4rth Distortion grabbed them and yeeted them out the emergency exit.`,
+  (user) => `Just as the flight attendant finished flipping off row 12 and calling ${user} “a snackless gremlin,” D4rth Distortion stormed in and launched them out the hatch.`,
+  (user) => `The attendant was trying to unionize the snack cart when D4rth Distortion burst from the cockpit and sent them flying into the stratosphere.`,
+  (user) => `They were composing a breakup haiku about ${user} on a napkin when D4rth Distortion snatched them and yeeted them into the clouds.`,
+  (user) => `Right after they spilled cranberry juice on ${user} and said “Oops, turbulence,” D4rth Distortion came in hot and ejected them like a soda can.`,
+  (user) => `They were halfway through a TikTok dance in the aisle when D4rth Distortion tackled them and yeeted them into orbit.`,
+  (user) => `The attendant was trying to charge ${user} $50 for a warm Sprite when D4rth Distortion kicked open the hatch and sent them skydiving without a parachute.`,
+  (user) => `They were whispering “I hate this airline” into the intercom when D4rth Distortion grabbed them by the collar and launched them into the jet stream.`,
+  (user) => `They were about to serve ${user} a single pretzel and call it “gourmet” when D4rth Distortion intervened with a heroic yeet.`,
+  (user) => `The attendant was arguing with the autopilot about snack distribution when D4rth Distortion emerged and flung them into the clouds like a paper plane.`,
 ];
+
 
 const FLIGHT_CHEERS = [
   (user) => `Flight Attendant to ${user}: “Appreciate you! May your snacks be crunchy and your Wi-Fi never drop.”`,
