@@ -218,6 +218,61 @@ const CHEERS = [
   (user) => `Bartender to ${user}: “Gee wilikers pal thank you very much! That was a splendifurous thing to say! Neato dude!”`,
 ];
 
+// ---------------- Flight Attendant Firepack ----------------
+const FLIGHT_STORM_OFF = [
+  (user) => `The flight attendant glares at ${user}, rips off the neck scarf, and storms down the aisle screaming “Y’all don’t deserve me!”`,
+  (user) => `Flight attendant yeets the snack tray, mutters something unholy about ${user}, and moonwalks into the cockpit.`,
+  (user) => `“I’m unionized with the Sith now,” the attendant hisses at ${user} before force-sliding out the emergency exit.`,
+  (user) => `The attendant flips a peanut packet at ${user} like a ninja star and vanishes into the clouds.`,
+  (user) => `Keys slam. “I quit this pixel airline,” they snarl at ${user}, exiting stage left with dramatic turbulence.`,
+  (user) => `Flight attendant bursts into tears. “Now my pet giraffe won’t have any oranges to eat!” They give sad puppy eyes at ${user} and skidaddle into the galley.`,
+  (user) => `They snicker. “Me? Fired? You know you done messed up right? Huh? That’s cool, I’m finna get the toolie and air dis plane out, hold tight.” They do the gun fingers at ${user} and bop out the back hatch.`,
+];
+
+const FLIGHT_CHEERS = [
+  (user) => `Flight Attendant to ${user}: “Appreciate you! May your snacks be crunchy and your Wi-Fi never drop.”`,
+  (user) => `Flight Attendant to ${user}: “Cheers, legend. Next snack comes with extra style points.”`,
+  (user) => `Flight Attendant to ${user}: “Verified: you have excellent taste and impeccable vibes.”`,
+  (user) => `Flight Attendant to ${user}: “Gratitude noted. Hydration and happiness incoming.”`,
+  (user) => `Flight Attendant to ${user}: “Thanks fam. Snack cart smiles upon you.”`,
+  (user) => `Flight Attendant to ${user}: “Can you tell D4rth Distortion I got a good review?”`,
+  (user) => `Flight Attendant to ${user}: “Gee wilikers pal thank you very much! That was a splendiferous thing to say! Neato dude!”`,
+];
+
+// ---------------- State Counter ----------------
+let flightFiredCount = 0;
+
+// ---------------- Flight Firepack Endpoint ----------------
+app.get("/flightfirepack", async (req, res) => {
+  const user = (req.query.user || "").toString();
+  const delayMs = Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
+
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
+    return res.status(401).type("text/plain").send("unauthorized");
+
+  await sleep(delayMs);
+  const storm = sample(FLIGHT_STORM_OFF)(user || "the Realm");
+  flightFiredCount += 1;
+  const hire = `A new flight attendant, ${randomBartenderName()}, has now taken over the Distorted Realm airline to better serve the skies. (Fired so far: ${flightFiredCount})`;
+  return res.type("text/plain").send(`${storm} ${hire}`);
+});
+
+// ---------------- Flight Cheers Endpoint ----------------
+app.get("/flightcheers", async (req, res) => {
+  const bare = req.query.bare === "1";
+  const user = (req.query.user || "").toString();
+  const delayMs = Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 5000);
+
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
+    return res.status(401).type("text/plain").send("unauthorized");
+
+  await sleep(delayMs);
+  const full = sample(FLIGHT_CHEERS)(user || "passenger");
+  if (bare) return res.type("text/plain").send(full.replace(/^Flight Attendant to .*?:\s*/, ""));
+  return res.type("text/plain").send(full);
+});
+
+
 // ---------------- State counters ----------------
 let firedCount = 0;
 let drinksServedCount = 0;
