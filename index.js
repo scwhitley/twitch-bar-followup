@@ -165,6 +165,39 @@ const COMPLAINTS = [
   (user, issue) => `Bartender to ${user}: “Alright ${user}, I’ll remake it… but this time I’m charging you emotional labor.”`,
 ];
 
+// ---------------- Flight Attendant Complaint Quips ----------------
+const FLIGHT_COMPLAINTS = [
+  (user, issue) => `Flight Attendant to ${user}: “Oh, ${issue || "that snack"} not to your liking? I’ll alert the captain… to laugh at you.”`,
+  (user, issue) => `Flight Attendant to ${user}: “We ran out of ${issue || "that drink"} after the turbulence party in row 12.”`,
+  (user, issue) => `Flight Attendant to ${user}: “That ${issue || "meal"} was curated by Michelin-starred pigeons. Show some respect.”`,
+  (user, issue) => `Flight Attendant to ${user}: “I’ll remake it… but this time I’m charging you emotional labor.”`,
+  (user, issue) => `Flight Attendant to ${user}: “You want gourmet service in coach? That’s adorable.”`,
+  (user, issue) => `Flight Attendant to ${user}: “I used to be a barista. Now I microwave pretzels for ${user}.”`,
+  (user, issue) => `Flight Attendant to ${user}: “OMG I'm so sorry! Here’s a new snack. Please don’t tell D4rth Distortion.”`,
+  (user, issue) => `Flight Attendant to ${user}: “We call that ‘airline flavor’. It’s rustic.”`,
+  (user, issue) => `Flight Attendant to ${user}: “If you wanted perfection, you should’ve flown private.”`,
+  (user, issue) => `Flight Attendant to ${user}: “I’ll fix it, but I’m writing a poem about this trauma later.”`,
+  (user, issue) => `Flight Attendant to ${user}: “I don’t get paid enough to care. Take it up with the clouds.”`,
+  (user, issue) => `Flight Attendant to ${user}: “I substituted your ${issue || "snack"} with vibes. Hope that’s okay.”`,
+];
+
+// ---------------- Flight Complaint Endpoint ----------------
+app.get("/flightcomplaint", async (req, res) => {
+  const bare = req.query.bare === "1";
+  const user = (req.query.user || "").toString();
+  const issue = (req.query.issue || "").toString().slice(0, 120);
+  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
+
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
+    return res.status(401).type("text/plain").send("unauthorized");
+
+  await sleep(delayMs);
+  const full = sample(FLIGHT_COMPLAINTS)(user || "passenger", issue);
+  if (bare) return res.type("text/plain").send(full.replace(/^Flight Attendant to .*?:\s*/, ""));
+  return res.type("text/plain").send(full);
+});
+
+
 const STORM_OFF = [
   (user) => `The bartender glares at ${user}, rips off the apron, and storms out screaming “Y’all don’t deserve me!”`,
   (user) => `Bartender yeets the bar rag, mutters something unholy about ${user}, and moonwalks out the door.`,
