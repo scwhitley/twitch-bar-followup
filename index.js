@@ -358,6 +358,98 @@ app.get("/debug/award", async (req, res) => {
   return res.type("text/plain").send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
 });
 
+// ---------------- Flight Snack Command Pools ----------------
+const FLIGHT_SNACKS = {
+  coach: {
+    snacks: [
+      "pretzels", "salted peanuts", "mini cookies", "trail mix", "granola bar",
+      "cheese crackers", "popcorn", "fruit snacks", "rice cakes", "potato chips"
+    ],
+    drinks: [
+      "water", "cola", "ginger ale", "lemonade", "iced tea",
+      "apple juice", "orange juice", "Sprite", "root beer", "cranberry juice"
+    ]
+  },
+  business: {
+    snacks: [
+      "hummus with pita chips", "cheese cubes", "mixed nuts", "chocolate truffles", "mini croissants",
+      "dried mango slices", "Greek yogurt", "veggie sticks with ranch", "mini muffins", "smoked almonds"
+    ],
+    drinks: [
+      "sparkling water", "cold brew coffee", "craft soda", "green tea", "coconut water",
+      "Arnold Palmer", "cherry limeade", "kombucha", "espresso shot", "blackberry lemonade"
+    ]
+  },
+  firstclass: {
+    snacks: [
+      "prosciutto-wrapped melon", "Brie with fig jam", "truffle popcorn", "ahi tuna bites", "mini charcuterie board",
+      "Caprese skewers", "lobster sliders", "caviar on blinis", "macarons", "chocolate-dipped strawberries"
+    ],
+    drinks: [
+      "champagne", "Pinot Noir", "matcha latte", "elderflower tonic", "craft cocktail (virgin)",
+      "mango lassi", "hibiscus tea", "sparkling rosé", "cold-pressed juice", "saffron-infused lemonade"
+    ]
+  }
+};
+
+// ---------------- Flight Attendant Quips ----------------
+const FLIGHT_ATTENDANT_QUIPS = [
+  (user) => `“You're lucky I'm still sober, ${user}.”`,
+  (user) => `“Enjoy your snack, ${user}. I microwaved it myself.”`,
+  (user) => `“This is the best we could do at 30,000 feet, ${user}.”`,
+  (user) => `“Don’t ask for seconds, ${user}. I’m not your personal chef.”`,
+  (user) => `“Smile and chew, ${user}. That’s all we ask.”`,
+  (user) => `“If you need anything else, press the button and pray.”`,
+  (user) => `“You’re my favorite passenger today, ${user}. Don’t tell the others.”`,
+  (user) => `“I spit in the champagne, ${user}. Just kidding. Or am I?”`,
+  (user) => `“This snack pairs well with turbulence, ${user}.”`,
+  (user) => `“You’re welcome, ${user}. I deserve a raise.”`,
+  (user) => `“I used to dream of Broadway. Now I serve pretzels to ${user}.”`,
+  (user) => `“You again, ${user}? Fine. Here’s your snack.”`,
+  (user) => `“I’m not mad, ${user}. Just disappointed.”`,
+  (user) => `“This snack is more gourmet than your outfit, ${user}.”`,
+  (user) => `“I gave you the good stuff, ${user}. Don’t tell coach.”`
+];
+
+// ---------------- Helper: Build Snack Response ----------------
+const getFlightSnackCombo = (tier, user) => {
+  const pool = FLIGHT_SNACKS[tier];
+  if (!pool) return `${user} requested a snack, but the galley is empty.`;
+
+  const snack = pool.snacks[Math.floor(Math.random() * pool.snacks.length)];
+  const drink = pool.drinks[Math.floor(Math.random() * pool.drinks.length)];
+  const quip = FLIGHT_ATTENDANT_QUIPS[Math.floor(Math.random() * FLIGHT_ATTENDANT_QUIPS.length)](user);
+
+  return `Here is your food, ${user}: ${snack} and ${drink}. ${quip}`;
+};
+
+// ---------------- Flight Snack Endpoints ----------------
+app.get("/flight/coachsnacks", async (req, res) => {
+  const user = (req.query.user || "Guest").toString();
+  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
+  await sleep(delayMs);
+  const msg = getFlightSnackCombo("coach", user);
+  res.type("text/plain").send(msg);
+});
+
+app.get("/flight/business", async (req, res) => {
+  const user = (req.query.user || "Guest").toString();
+  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
+  await sleep(delayMs);
+  const msg = getFlightSnackCombo("business", user);
+  res.type("text/plain").send(msg);
+});
+
+app.get("/flight/firstclass", async (req, res) => {
+  const user = (req.query.user || "Guest").toString();
+  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
+  await sleep(delayMs);
+  const msg = getFlightSnackCombo("firstclass", user);
+  res.type("text/plain").send(msg);
+});
+
+
+
 // ===================== GRASS ENTREPRENEUR =====================
 
 // Costs (Distortion Dollars)
