@@ -261,6 +261,45 @@ app.get("/flightfirepack", async (req, res) => {
   return res.type("text/plain").send(`${storm} ${hire}`);
 });
 
+// ---------------- Flight Attendant Firepack with Auto-Hire ----------------
+const FLIGHT_STORM_OFF = [
+  (user) => `The flight attendant was mid-rant about ${user} asking for extra peanuts when D4rth Distortion grabbed them and yeeted them out the emergency exit.`,
+  (user) => `Just as the flight attendant finished flipping off row 12 and calling ${user} “a snackless gremlin,” D4rth Distortion stormed in and launched them out the hatch.`,
+  (user) => `They were composing a breakup haiku about ${user} on a napkin when D4rth Distortion snatched them and yeeted them into the clouds.`,
+  (user) => `They were whispering “I hate this airline” into the intercom when D4rth Distortion grabbed them by the collar and launched them into the jet stream.`,
+  (user) => `They were about to serve ${user} a single pretzel and call it “gourmet” when D4rth Distortion intervened with a heroic yeet.`,
+];
+
+let flightFiredCount = 0;
+
+const randomFlightAttendantName = () =>
+  `${sample(BARTENDER_FIRST)} ${sample(BARTENDER_LAST)}`;
+
+app.get("/flightfirepack", async (req, res) => {
+  const user = (req.query.user || "").toString();
+  const delayMs = Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
+
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
+    return res.status(401).type("text/plain").send("unauthorized");
+
+  await sleep(delayMs);
+  const storm = sample(FLIGHT_STORM_OFF)(user || "the Realm");
+  flightFiredCount += 1;
+
+  // Send initial fire message
+  res.type("text/plain").send(storm);
+
+  // After 5 seconds, announce new hire
+  setTimeout(() => {
+    const newHire = randomFlightAttendantName();
+    const msg = `A new flight attendant, ${newHire}, has teleported onto the plane to better serve the skies. (Fired so far: ${flightFiredCount})`;
+    // You can log this, send to overlay, or trigger Nightbot externally
+    console.log("[Nightbot follow-up]", msg);
+    // Optional: expose via a shared queue or webhook if needed
+  }, 5000);
+});
+
+
 // ---------------- Flight Cheers Endpoint ----------------
 app.get("/flightcheers", async (req, res) => {
   const bare = req.query.bare === "1";
