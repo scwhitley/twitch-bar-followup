@@ -568,7 +568,6 @@ app.get("/flight/firstclass", async (req, res) => {
   res.type("text/plain").send(msg);
 });
 
-import express from "express";
 import axios from "axios"
 const app = express();
 
