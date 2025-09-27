@@ -601,11 +601,11 @@ const quips = [
 const sendChatMessage = async (message) => {
   try {
     await axios.post('https://api.streamelements.com/kappa/v2/bot/message', {
-      channel: 'YOUR_CHANNEL_NAME', // Replace with your Twitch channel name
+      channel: 'd4rth_distortion', // Replace with your Twitch channel name
       message: message
     }, {
       headers: {
-        Authorization: `Bearer YOUR_JWT_TOKEN` // Replace with your StreamElements JWT token
+        Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJjaXRhZGVsIiwiZXhwIjoxNzcyOTkyMDE0LCJqdGkiOiJmZDg3NjNhYS03NzljLTQzMjAtOTE5MS0wMTAwNmM4M2VhNTkiLCJjaGFubmVsIjoiNjhiYzI2ZWM2MjU0OWUwZTU0YTRjNzFmIiwicm9sZSI6Im93bmVyIiwiYXV0aFRva2VuIjoiWXRzbmpPa2VNak03WjJvX2llVTVUd0xQQmNqS3FtVkhtTkt3N0lPV2FlY0I3OTlnIiwidXNlciI6IjY4YmMyNmVjNjI1NDllMGU1NGE0YzcxZSIsInVzZXJfaWQiOiIyN2Y3NDkzYS1jMWMxLTRkODctYmFmYy05YjM1ZTQwMjBhMTQiLCJ1c2VyX3JvbGUiOiJjcmVhdG9yIiwicHJvdmlkZXIiOiJ0d2l0Y2giLCJwcm92aWRlcl9pZCI6IjEzNjM0MDg1NzEiLCJjaGFubmVsX2lkIjoiMzkyZTJlOWMtN2EyNC00ZDIzLWE5MWYtYjEwNWJhMGYyYTJmIiwiY3JlYXRvcl9pZCI6ImExODI5YzdmLTZjOWQtNDcyMi1hN2U3LWUxMWI5OTA4YTAxNiJ9.7qRNHBvVqFC-EvXazbKD4gYmWBjBc9nlfkwbT363Auk` // Replace with your StreamElements JWT token
       }
     });
   } catch (err) {
