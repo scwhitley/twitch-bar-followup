@@ -569,20 +569,6 @@ app.get("/flight/firstclass", async (req, res) => {
   res.type("text/plain").send(msg);
 });
 
-// 🔧 Dirty mechanic quips.
-const quips = [
-  "Your crankshaft’s got commitment issues.",
-  "That gasket’s leaking more than your secrets.",
-  "Your dipstick’s been places it shouldn’t be.",
-  "Your piston rings are looser than your moral compass.",
-  "Your timing belt’s into some freaky stuff.",
-  "Your fluids are mixing in ways science can’t explain.",
-  "Your catalytic converter is kinkier than expected.",
-  "Your spark plug’s firing blanks, buddy.",
-  "Your OBD-II port is giving off strong ‘step on me’ vibes.",
-  "Your exhaust pipe’s seen things it can’t unsee."
-];
-
 // 🔊 Send message to StreamElements chat
 const sendChatMessage = async (message) => {
   try {
@@ -604,25 +590,14 @@ app.get('/diagnosis', async (req, res) => {
   if (key !== 'd4rth-distortion') return res.status(403).send('Forbidden');
 
   const displayName = user || 'Guest';
-  const quip = quips[Math.floor(Math.random() * quips.length)];
 
-  // Respond immediately
-  res.send(`Diagnosis initiated for ${displayName}`);
+  // Respond immediately to StreamElements
+  res.type("text/plain").send(`${displayName} asked D4rth Distortion to run a deep diagnosis on them.`);
 
-  // Chain chat messages with delays
-  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-  (async () => {
-    await delay(2000);
-    await sendChatMessage(`🛠️ D4rth Distortion inserted his diagnosis tool into ${displayName}'s input socket. Diagnosis commencing...`);
-
-    await delay(4000);
-    await sendChatMessage(`🔧 Might need to go deeper on this one. ${quip}`);
-
-    await delay(5000);
-    await sendChatMessage(`📋 Diagnosis completed. Please see D4rth Distortion for the analysis.`);
-  })();
+  // Nightbot will handle the follow-up message 6 seconds later
 });
+
+
 
 
 
