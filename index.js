@@ -2,6 +2,7 @@
 import express from "express";
 import crypto from "crypto";
 import fs from "fs";
+import axios from "axios"
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
 const fetch = globalThis.fetch || undiciFetch;
@@ -567,9 +568,6 @@ app.get("/flight/firstclass", async (req, res) => {
   const msg = getFlightSnackCombo("firstclass", user);
   res.type("text/plain").send(msg);
 });
-
-import axios from "axios"
-const app = express();
 
 // 🔧 Dirty mechanic quips.
 const quips = [
