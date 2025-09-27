@@ -261,8 +261,6 @@ app.get("/flightfirepack", async (req, res) => {
   return res.type("text/plain").send(`${storm} ${hire}`);
 });
 
-let flightFiredCount = 0;
-
 const randomFlightAttendantName = () =>
   `${sample(BARTENDER_FIRST)} ${sample(BARTENDER_LAST)}`;
 
