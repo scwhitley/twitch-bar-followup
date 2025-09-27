@@ -609,21 +609,21 @@ app.get('/diagnosis', async (req, res) => {
   // Respond immediately
   res.send(`Diagnosis initiated for ${displayName}`);
 
-  // Schedule chat messages outside the request lifecycle
-  setImmediate(() => {
-    setTimeout(() => {
-      sendChatMessage(`🛠️ D4rth Distortion inserted his diagnosis tool into ${displayName}'s input socket. Diagnosis commencing...`);
-    }, 2000);
+  // Chain chat messages with delays
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    setTimeout(() => {
-      sendChatMessage(`🔧 Might need to go deeper on this one. ${quip}`);
-    }, 6000);
+  (async () => {
+    await delay(2000);
+    await sendChatMessage(`🛠️ D4rth Distortion inserted his diagnosis tool into ${displayName}'s input socket. Diagnosis commencing...`);
 
-    setTimeout(() => {
-      sendChatMessage(`📋 Diagnosis completed. Please see D4rth Distortion for the analysis.`);
-    }, 11000);
-  });
+    await delay(4000);
+    await sendChatMessage(`🔧 Might need to go deeper on this one. ${quip}`);
+
+    await delay(5000);
+    await sendChatMessage(`📋 Diagnosis completed. Please see D4rth Distortion for the analysis.`);
+  })();
 });
+
 
 
 
