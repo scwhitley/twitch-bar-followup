@@ -599,28 +599,30 @@ const sendChatMessage = async (message) => {
   }
 };
 
-// 🛠️ Diagnosis endpoint
 app.get('/diagnosis', async (req, res) => {
-  const user = req.query.user || 'Guest';
+  const { user, key } = req.query;
+  if (key !== 'd4rth-distortion') return res.status(403).send('Forbidden');
+
+  const displayName = user || 'Guest';
   const quip = quips[Math.floor(Math.random() * quips.length)];
 
-  // First message (2s delay)
+  // Respond immediately
+  res.send(`Diagnosis initiated for ${displayName}`);
+
+  // Fire chat messages asynchronously
   setTimeout(() => {
-    sendChatMessage(`🛠️ D4rth Distortion inserted his diagnosis tool into ${user}'s input socket. Diagnosis commencing...`);
+    sendChatMessage(`🛠️ D4rth Distortion inserted his diagnosis tool into ${displayName}'s input socket. Diagnosis commencing...`);
   }, 2000);
 
-  // Second message (6s delay)
   setTimeout(() => {
     sendChatMessage(`🔧 Might need to go deeper on this one. ${quip}`);
   }, 6000);
 
-  // Third message (11s delay)
   setTimeout(() => {
     sendChatMessage(`📋 Diagnosis completed. Please see D4rth Distortion for the analysis.`);
   }, 11000);
-
-  res.send(`Diagnosis initiated for ${user}`);
 });
+
 
 
 // ===================== GRASS ENTREPRENEUR =====================
