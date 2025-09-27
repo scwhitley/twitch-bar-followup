@@ -579,6 +579,62 @@ app.get("/flight/firstclass", async (req, res) => {
   res.type("text/plain").send(msg);
 });
 
+const express = require('express');
+const axios = require('axios');
+const app = express();
+
+// 🔧 Dirty mechanic quips
+const quips = [
+  "Your crankshaft’s got commitment issues.",
+  "That gasket’s leaking more than your secrets.",
+  "Your dipstick’s been places it shouldn’t be.",
+  "Your piston rings are looser than your moral compass.",
+  "Your timing belt’s into some freaky stuff.",
+  "Your fluids are mixing in ways science can’t explain.",
+  "Your catalytic converter is kinkier than expected.",
+  "Your spark plug’s firing blanks, buddy.",
+  "Your OBD-II port is giving off strong ‘step on me’ vibes.",
+  "Your exhaust pipe’s seen things it can’t unsee."
+];
+
+// 🔊 Send message to StreamElements chat
+const sendChatMessage = async (message) => {
+  try {
+    await axios.post('https://api.streamelements.com/kappa/v2/bot/message', {
+      channel: 'YOUR_CHANNEL_NAME', // Replace with your Twitch channel name
+      message: message
+    }, {
+      headers: {
+        Authorization: `Bearer YOUR_JWT_TOKEN` // Replace with your StreamElements JWT token
+      }
+    });
+  } catch (err) {
+    console.error('Error sending chat message:', err.message);
+  }
+};
+
+// 🛠️ Diagnosis endpoint
+app.get('/diagnosis', async (req, res) => {
+  const user = req.query.user || 'Guest';
+  const quip = quips[Math.floor(Math.random() * quips.length)];
+
+  // First message (2s delay)
+  setTimeout(() => {
+    sendChatMessage(`🛠️ D4rth Distortion inserted his diagnosis tool into ${user}'s input socket. Diagnosis commencing...`);
+  }, 2000);
+
+  // Second message (6s delay)
+  setTimeout(() => {
+    sendChatMessage(`🔧 Might need to go deeper on this one. ${quip}`);
+  }, 6000);
+
+  // Third message (11s delay)
+  setTimeout(() => {
+    sendChatMessage(`📋 Diagnosis completed. Please see D4rth Distortion for the analysis.`);
+  }, 11000);
+
+  res.send(`Diagnosis initiated for ${user}`);
+});
 
 
 // ===================== GRASS ENTREPRENEUR =====================
