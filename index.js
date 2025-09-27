@@ -583,7 +583,7 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 
-// 🔧 Dirty mechanic quips
+// 🔧 Dirty mechanic quips.
 const quips = [
   "Your crankshaft’s got commitment issues.",
   "That gasket’s leaking more than your secrets.",
