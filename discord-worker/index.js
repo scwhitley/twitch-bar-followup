@@ -9,7 +9,15 @@ import {
   PermissionsBitField,
   ActivityType,
   Options,
-} from 'discord.js';
+} 
+const express = require('express');
+const discordRouter = require('./discord.routes');
+
+const app = express();
+app.use(express.json());
+
+  
+  from 'discord.js';
 
 const {
   DISCORD_TOKEN,
@@ -88,6 +96,9 @@ async function apiPost(path, body) {
   if (!res.ok) throw new Error(`POST ${path} -> ${res.status}`);
   return res.json();
 }
+
+// MOUNT IT HERE:
+app.use('/discord', discordRouter);
 
 // 5) Menu cache (optional, hot-loaded on boot)
 let DRINKS = [];
