@@ -18,6 +18,14 @@ const TWITCH_REWARD_ID = process.env.TWITCH_REWARD_ID || ""; // optional
 const SE_JWT = process.env.SE_JWT || "";
 const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
 
+// ---------- Discord Mounts ----------
+const express = require('express');
+const discordRouter = require('./discord.routes');
+
+const app = express();
+app.use(express.json());
+
+
 // ---------- Award log (shared) ----------
 const AWARD_LOG_FILE = "./award-log.json";
 function logSpecialAward(entry) {
@@ -804,6 +812,8 @@ app.get("/grass/buybrownies", async (req, res) => {
   if (!user) return res.status(400).type("text/plain").send("Missing user");
   const product = PRODUCTS["brownies"];
 
+  // discord route
+  app.use('/discord', discordRouter);
   if (mode === "nb") {
     const { nbLine } = buildLinesForBuy({ user, product, newTotal: 0, amount: product.buyInc });
     return res.type("text/plain").send(nbLine);
