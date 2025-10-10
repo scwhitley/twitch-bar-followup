@@ -1,5 +1,6 @@
 // index.js
 import express from "express";
+import discordRouter from './discord.routes.js';
 import crypto from "crypto";
 import fs from "fs";
 import axios from "axios"
