@@ -2,6 +2,7 @@
 import express from "express";
 import discordRouter from './discord.routes.js';
 import crypto from "crypto";
+import 'dotenv/config';
 import fs from "fs";
 import axios from "axios"
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
@@ -60,6 +61,9 @@ async function seAddPoints(username, amount) {
     return { ok: false, status: -1, body: String(err).slice(0, 300) };
   }
 }
+
+// quick public ping (no auth) so we can prove we're in the right app
+app.get('/discord/ping', (_req, res) => res.send('pong'));
 
 /** Fetch a user's current SE points balance */
 async function seGetPoints(username) {
@@ -815,6 +819,7 @@ app.get("/grass/buybrownies", async (req, res) => {
 
   // discord route
   app.use('/discord', discordRouter);
+  
   if (mode === "nb") {
     const { nbLine } = buildLinesForBuy({ user, product, newTotal: 0, amount: product.buyInc });
     return res.type("text/plain").send(nbLine);
@@ -921,4 +926,6 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
 
 // ---------------- Start server ----------------
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log('[ENTRY] backend main loaded');
+  console.log('[LISTEN]', PORT);
