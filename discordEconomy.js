@@ -1,4 +1,4 @@
-// discordEconomy.js (CommonJS)
+// discordEconomy.js (ESM)
 const DRINKS = [
   { key: 'margarita',   name: 'Margarita',       price: 30, desc: 'Tequila, lime, triple sec. Salted rim, salty attitude.' },
   { key: 'espresso',    name: 'Espresso Shot',   price: 15, desc: 'Concentrated caffeine missile. Aim responsibly.' },
@@ -6,65 +6,46 @@ const DRINKS = [
   { key: 'mojito',      name: 'Mojito',          price: 26, desc: 'Rum, mint, lime, sugar. Refreshing chaos.' },
   { key: 'oldfashioned',name: 'Old Fashioned',   price: 32, desc: 'Whiskey, bitters, sugar cube. Classic menace.' },
   { key: 'negroni',     name: 'Negroni',         price: 29, desc: 'Gin, Campari, vermouth. Bitter—like your ex.' },
-  { key: 'manhattan',   name: 'Manhattan',       price: 31, desc: 'Whiskey, vermouth, bitters. Big city energy.' },
+  { key: 'manhattan',   name: 'Manhattan',       price: 31, desc: 'Whiskey, sweet vermouth, bitters. Big city energy.' },
   { key: 'daiquiri',    name: 'Daiquiri',        price: 25, desc: 'Rum, lime, sugar. Minimalist trouble.' },
   { key: 'whiskeysour', name: 'Whiskey Sour',    price: 27, desc: 'Whiskey, lemon, simple syrup. Foam if you fancy.' },
   { key: 'pina',        name: 'Piña Colada',     price: 24, desc: 'Rum, coconut, pineapple. Vacation in a glass.' },
 ];
 
 const QUIPS = [
-  "Careful—this one stares back.",
-  "House special: regret with a lime wedge.",
-  "Pairs nicely with questionable decisions.",
-  "Shaken, not judged.",
-  "Distilled courage, bottled chaos.",
-  "Best enjoyed away from your ex’s DMs.",
-  "Calories don’t count at The Veil.",
-  "If it burns, it’s working.",
-  "Garnished with poor impulse control.",
-  "Goes down smoother than your excuses.",
-  "Do not taunt the cocktail.",
-  "Comes with free advice you won’t follow.",
-  "Looks classy. Acts feral.",
-  "Conceived in a lab, approved by gremlins.",
-  "Sip it before it sips you.",
-  "Brewed in the back room by rumors.",
-  "Fortified with vibes and spite.",
-  "Legend says the third one talks.",
-  "Wiser folks stopped at two.",
-  "We are legally required to say ‘enjoy.’",
+  "Careful—this one stares back.","House special: regret with a lime wedge.","Pairs nicely with questionable decisions.",
+  "Shaken, not judged.","Distilled courage, bottled chaos.","Best enjoyed away from your ex’s DMs.",
+  "Calories don’t count at The Veil.","If it burns, it’s working.","Garnished with poor impulse control.",
+  "Goes down smoother than your excuses.","Do not taunt the cocktail.","Comes with free advice you won’t follow.",
+  "Looks classy. Acts feral.","Conceived in a lab, approved by gremlins.","Sip it before it sips you.",
+  "Brewed in the back room by rumors.","Fortified with vibes and spite.","Legend says the third one talks.",
+  "Wiser folks stopped at two.","We are legally required to say ‘enjoy.’",
 ];
 
-// TEMP per-process store (replace with your real DB/SE calls later)
-const wallets = new Map(); // key: `${platform}:${userId}` -> { balance, lifetimeDrinks }
-
-function keyOf({ platform, userId }) { return `${platform}:${userId}`; }
+// super simple in-memory wallet for now
+const wallets = new Map(); // key `${platform}:${userId}` -> { balance, lifetimeDrinks }
+const keyOf = ({ platform, userId }) => `${platform}:${userId}`;
 function getOrInitWallet({ platform, userId }) {
   const k = keyOf({ platform, userId });
   if (!wallets.has(k)) wallets.set(k, { balance: 100, lifetimeDrinks: 0 });
   return wallets.get(k);
 }
 
-async function getMenu() {
-  // Swap this to return your real menu if you’ve got one in code/DB
+export async function getMenu() {
   return DRINKS;
 }
 
-async function getBalance({ platform, userId }) {
-  // Replace with your real balance source (e.g., StreamElements loyalty)
+export async function getBalance({ platform, userId }) {
   const w = getOrInitWallet({ platform, userId });
   return { balance: w.balance, lifetimeDrinks: w.lifetimeDrinks };
 }
 
-async function purchaseDrink({ platform, userId, command }) {
+export async function purchaseDrink({ platform, userId, command }) {
   const drink = DRINKS.find(d => d.key === command);
   if (!drink) return { ok: false, error: `Unknown drink: ${command}` };
 
   const w = getOrInitWallet({ platform, userId });
-
-  if (w.balance < drink.price) {
-    return { ok: false, error: `You're short ${drink.price - w.balance} DD.` };
-  }
+  if (w.balance < drink.price) return { ok: false, error: `You're short ${drink.price - w.balance} DD.` };
 
   w.balance -= drink.price;
   w.lifetimeDrinks += 1;
@@ -76,13 +57,5 @@ async function purchaseDrink({ platform, userId, command }) {
     `> ${drink.desc}\n` +
     `Balance: **${w.balance} DD** | Lifetime drinks: **${w.lifetimeDrinks}**`;
 
-  return {
-    ok: true,
-    message,
-    newBalance: w.balance,
-    lifetimeDrinks: w.lifetimeDrinks,
-  };
+  return { ok: true, message, newBalance: w.balance, lifetimeDrinks: w.lifetimeDrinks };
 }
-
-module.exports = { getMenu, getBalance, purchaseDrink };
-
