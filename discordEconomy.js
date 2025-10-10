@@ -1,4 +1,4 @@
-// discordEconomy.js (ESM)
+// discordEconomy.js (ESM) — temporary in-memory economy
 const DRINKS = [
   { key: 'margarita',   name: 'Margarita',       price: 30, desc: 'Tequila, lime, triple sec. Salted rim, salty attitude.' },
   { key: 'espresso',    name: 'Espresso Shot',   price: 15, desc: 'Concentrated caffeine missile. Aim responsibly.' },
@@ -13,16 +13,28 @@ const DRINKS = [
 ];
 
 const QUIPS = [
-  "Careful—this one stares back.","House special: regret with a lime wedge.","Pairs nicely with questionable decisions.",
-  "Shaken, not judged.","Distilled courage, bottled chaos.","Best enjoyed away from your ex’s DMs.",
-  "Calories don’t count at The Veil.","If it burns, it’s working.","Garnished with poor impulse control.",
-  "Goes down smoother than your excuses.","Do not taunt the cocktail.","Comes with free advice you won’t follow.",
-  "Looks classy. Acts feral.","Conceived in a lab, approved by gremlins.","Sip it before it sips you.",
-  "Brewed in the back room by rumors.","Fortified with vibes and spite.","Legend says the third one talks.",
-  "Wiser folks stopped at two.","We are legally required to say ‘enjoy.’",
+  "Careful—this one stares back.",
+  "House special: regret with a lime wedge.",
+  "Pairs nicely with questionable decisions.",
+  "Shaken, not judged.",
+  "Distilled courage, bottled chaos.",
+  "Best enjoyed away from your ex’s DMs.",
+  "Calories don’t count at The Veil.",
+  "If it burns, it’s working.",
+  "Garnished with poor impulse control.",
+  "Goes down smoother than your excuses.",
+  "Do not taunt the cocktail.",
+  "Comes with free advice you won’t follow.",
+  "Looks classy. Acts feral.",
+  "Conceived in a lab, approved by gremlins.",
+  "Sip it before it sips you.",
+  "Brewed in the back room by rumors.",
+  "Fortified with vibes and spite.",
+  "Legend says the third one talks.",
+  "Wiser folks stopped at two.",
+  "We are legally required to say ‘enjoy.’",
 ];
 
-// super simple in-memory wallet for now
 const wallets = new Map(); // key `${platform}:${userId}` -> { balance, lifetimeDrinks }
 const keyOf = ({ platform, userId }) => `${platform}:${userId}`;
 function getOrInitWallet({ platform, userId }) {
@@ -31,9 +43,7 @@ function getOrInitWallet({ platform, userId }) {
   return wallets.get(k);
 }
 
-export async function getMenu() {
-  return DRINKS;
-}
+export async function getMenu() { return DRINKS; }
 
 export async function getBalance({ platform, userId }) {
   const w = getOrInitWallet({ platform, userId });
