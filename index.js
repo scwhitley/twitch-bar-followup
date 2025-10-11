@@ -26,7 +26,8 @@ app.use(express.json());
 
 
 // ---------- Award log (shared) ----------
-AWARD_LOG_FILE = "./award-log.json";
+const AWARD_LOG_FILE = "./award-log.json";
+
 function logSpecialAward(entry) {
   try {
     const arr = fs.existsSync(AWARD_LOG_FILE)
