@@ -21,11 +21,12 @@ const SE_JWT = process.env.SE_JWT || "";
 const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
 
 // ---------- Discord Mounts ----------
+const app = express();
 app.use(express.json());
 
 
 // ---------- Award log (shared) ----------
-const AWARD_LOG_FILE = "./award-log.json";
+AWARD_LOG_FILE = "./award-log.json";
 function logSpecialAward(entry) {
   try {
     const arr = fs.existsSync(AWARD_LOG_FILE)
@@ -111,7 +112,6 @@ function awardAndLogLater(user, drink, date, amount) {
   });
 }
 
-const app = express();
 app.disable("x-powered-by");
 
 // ---------------- Shared helpers ----------------
