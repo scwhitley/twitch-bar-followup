@@ -1,4 +1,7 @@
-// discordEconomy.js (ESM) — temporary in-memory economy
+import fs from 'fs';
+const WALLET_FILE = './wallets.json';
+
+// discordEconomy.js (ESM) — persistent economy
 const DRINKS = [
   { key: 'margarita',   name: 'Margarita',       price: 30, desc: 'Tequila, lime, triple sec. Salted rim, salty attitude.' },
   { key: 'espresso',    name: 'Espresso Shot',   price: 15, desc: 'Concentrated caffeine missile. Aim responsibly.' },
@@ -36,14 +39,38 @@ const QUIPS = [
 ];
 
 export const wallets = new Map(); // key `${platform}:${userId}` -> { balance, lifetimeDrinks }
+
 const keyOf = ({ platform, userId }) => `${platform}:${userId}`;
+
 export function getOrInitWallet({ platform, userId }) {
   const k = keyOf({ platform, userId });
-  if (!wallets.has(k)) wallets.set(k, { balance: 100, lifetimeDrinks: 0 });
+  if (!wallets.has(k)) {
+    wallets.set(k, { balance: 100, lifetimeDrinks: 0 });
+    saveWallets(); // Save when new wallet is created
+  }
   return wallets.get(k);
 }
 
-export async function getMenu() { return DRINKS; }
+export function loadWallets() {
+  if (fs.existsSync(WALLET_FILE)) {
+    const raw = fs.readFileSync(WALLET_FILE);
+    const obj = JSON.parse(raw);
+    for (const [key, val] of Object.entries(obj)) {
+      wallets.set(key, val);
+    }
+    console.log(`[WALLET] Loaded ${wallets.size} wallets`);
+  }
+}
+
+export function saveWallets() {
+  const obj = Object.fromEntries(wallets.entries());
+  fs.writeFileSync(WALLET_FILE, JSON.stringify(obj, null, 2));
+  console.log('[WALLET] Saved wallets to disk');
+}
+
+export async function getMenu() {
+  return DRINKS;
+}
 
 export async function getBalance({ platform, userId }) {
   const w = getOrInitWallet({ platform, userId });
@@ -59,6 +86,7 @@ export async function purchaseDrink({ platform, userId, command }) {
 
   w.balance -= drink.price;
   w.lifetimeDrinks += 1;
+  saveWallets(); // Save after purchase
 
   const quip = QUIPS[Math.floor(Math.random() * QUIPS.length)];
   const message =
