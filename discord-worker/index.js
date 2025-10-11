@@ -2,7 +2,8 @@
 
 import 'dotenv/config';
 import express from 'express';
-import discordRouter from './discord.routes.js';
+import discordRouter from '../discord.routes.js';
+
 import {
   Client,
   GatewayIntentBits,
