@@ -1,7 +1,8 @@
 // index.js — Discord adapter worker (ESM)
 
-// 1) Env + safety
 import 'dotenv/config';
+import express from 'express';
+import discordRouter from './discord.routes.js';
 import {
   Client,
   GatewayIntentBits,
@@ -9,22 +10,17 @@ import {
   PermissionsBitField,
   ActivityType,
   Options,
-} 
-const express = require('express');
-const discordRouter = require('./discord.routes');
+} from 'discord.js';
 
 const app = express();
 app.use(express.json());
-
-  
-  from 'discord.js';
 
 const {
   DISCORD_TOKEN,
   GUILD_ID,
   PREFIX = '!',
-  BACKEND_URL,            // e.g. https://your-backend.onrender.com/discord
-  BACKEND_SECRET,         // must match backend
+  BACKEND_URL,
+  BACKEND_SECRET,
   PROMO_CHANNEL_ID = '',
 } = process.env;
 
@@ -38,13 +34,13 @@ console.log('[BOOT]', {
 process.on('unhandledRejection', (r) => console.error('UNHANDLED REJECTION:', r));
 process.on('uncaughtException', (e) => console.error('UNCAUGHT EXCEPTION:', e));
 
-// 2) Discord client (lean caches so 512MB plans are comfy)
+// Discord client setup
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,   // needed to assign roles
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // needed for prefix commands
+    GatewayIntentBits.MessageContent,
   ],
   partials: [Partials.Channel],
   makeCache: Options.cacheWithLimits({
@@ -58,10 +54,8 @@ const client = new Client({
 
 client.on('error', (e) => console.error('[CLIENT ERROR]', e));
 client.on('shardError', (e) => console.error('[SHARD ERROR]', e));
-// Uncomment if you need noisy gateway debugging:
-// client.on('debug', (m) => { if (!String(m).includes('Heartbeat')) console.log('[DEBUG]', m); });
 
-// 3) Role ladder (every 10 drinks)
+// Role ladder
 const ROLE_LADDER = [
   'Bar Newbie',
   'Spirited Initiate',
@@ -76,7 +70,7 @@ const ROLE_LADDER = [
 ];
 const tierFor = (lifetime) => Math.min(Math.floor(lifetime / 10), ROLE_LADDER.length - 1);
 
-// 4) Tiny HTTP helpers to reach your backend
+// Backend helpers
 async function apiGet(path) {
   const res = await fetch(`${BACKEND_URL}${path}`, {
     headers: { Authorization: `Bearer ${BACKEND_SECRET}` },
@@ -97,19 +91,19 @@ async function apiPost(path, body) {
   return res.json();
 }
 
-// MOUNT IT HERE:
+// Mount backend routes
 app.use('/discord', discordRouter);
 
-// 5) Menu cache (optional, hot-loaded on boot)
+// Menu cache
 let DRINKS = [];
 let DRINK_KEYS = new Set();
 async function refreshMenu() {
-  const data = await apiGet('/menu'); // backend returns { drinks: [...] }
+  const data = await apiGet('/menu');
   DRINKS = data.drinks || [];
   DRINK_KEYS = new Set(DRINKS.map(d => d.key.toLowerCase()));
 }
 
-// 6) Promotions
+// Role assignment
 async function assignRoleIfNeeded(member, lifetime) {
   const targetIdx = tierFor(lifetime);
   const targetName = ROLE_LADDER[targetIdx];
@@ -142,7 +136,7 @@ async function assignRoleIfNeeded(member, lifetime) {
   }
 }
 
-// 7) Command router
+// Command router
 client.on('messageCreate', async (msg) => {
   try {
     if (msg.author.bot) return;
@@ -154,7 +148,6 @@ client.on('messageCreate', async (msg) => {
     const [cmdWordRaw] = content.slice(PREFIX.length).trim().split(/\s+/);
     const cmd = (cmdWordRaw || '').toLowerCase();
 
-    // menu
     if (cmd === 'menu') {
       if (DRINKS.length === 0) await refreshMenu().catch(() => {});
       const lines = DRINKS.map(d => `\`${PREFIX}${d.key}\` — **${d.name}** (${d.price} DD)`);
@@ -162,14 +155,12 @@ client.on('messageCreate', async (msg) => {
       return;
     }
 
-    // balance
     if (cmd === 'balance') {
       const data = await apiGet(`/balance?platform=discord&userId=${msg.author.id}`);
       await msg.reply(`${msg.author}, your balance is **${data.balance} DD**, lifetime drinks: **${data.lifetimeDrinks}**.`);
       return;
     }
 
-    // admin: optionally allow !reloadmenu (Manage Server)
     if (cmd === 'reloadmenu') {
       if (!msg.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
         await msg.reply('Manage Server required.');
@@ -180,7 +171,6 @@ client.on('messageCreate', async (msg) => {
       return;
     }
 
-    // otherwise treat as drink command — let backend validate
     const result = await apiPost('/purchase', {
       platform: 'discord',
       userId: msg.author.id,
@@ -192,10 +182,8 @@ client.on('messageCreate', async (msg) => {
       return;
     }
 
-    // Print backend-crafted message (already includes price/desc/quip/balances)
     await msg.reply(result.message);
 
-    // Role bump on each 10 drinks
     if (typeof result.lifetimeDrinks === 'number') {
       const beforeTier = tierFor((result.lifetimeDrinks || 0) - 1);
       const afterTier = tierFor(result.lifetimeDrinks);
@@ -217,8 +205,8 @@ client.on('messageCreate', async (msg) => {
   }
 });
 
-// 8) Ready
-client.once('clientReady', async () => {
+// Ready
+client.once('ready', async () => {
   try {
     console.log('[READY] Logged in as', client.user?.tag);
     await refreshMenu().catch(() => {});
@@ -231,6 +219,5 @@ client.once('clientReady', async () => {
   }
 });
 
-// 9) Login
+// Login
 client.login(DISCORD_TOKEN).catch(e => console.error('[LOGIN ERROR]', e));
-
