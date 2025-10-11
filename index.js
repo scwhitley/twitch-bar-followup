@@ -9,6 +9,7 @@ import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
 import { purchaseDrink } from './discordEconomy.js';
 import { getBalance } from './discordEconomy.js';
+import { wallets, getOrInitWallet } from './discordEconomy.js';
 const fetch = globalThis.fetch || undiciFetch;
 
 // ---------- Twitch EventSub config ----------
