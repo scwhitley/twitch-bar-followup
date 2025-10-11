@@ -219,7 +219,7 @@ client.on('messageCreate', async (msg) => {
 client.once('ready', async () => {
   try {
     console.log('[READY] Logged in as', client.user?.tag);
-    await refreshMenu().catch(() => {});
+    await refreshMenu(); // no silent catch
     client.user.setPresence({
       activities: [{ name: `${PREFIX}menu in The Stirred Veil`, type: ActivityType.Listening }],
       status: 'online',
@@ -228,6 +228,7 @@ client.once('ready', async () => {
     console.error('[READY ERROR]', e);
   }
 });
+
 
 // Login
 client.login(DISCORD_TOKEN).catch(e => console.error('[LOGIN ERROR]', e));
