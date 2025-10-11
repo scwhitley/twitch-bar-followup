@@ -177,6 +177,16 @@ client.on('messageCreate', async (msg) => {
   return;
 }
 
+    if (cmd === 'leaderboard') {
+  const data = await apiGet('/leaderboard');
+  const lines = data.leaderboard.map((entry, i) => {
+    const userTag = `<@${entry.userId}>`;
+    return `**#${i + 1}** — ${userTag} with **${entry.lifetimeDrinks}** drinks`;
+  });
+  await msg.reply(`🏆 **Top Drinkers** 🏆\n${lines.join('\n')}`);
+  return;
+}
+
 
     if (cmd === 'reloadmenu') {
       if (!msg.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
