@@ -101,10 +101,17 @@ app.use('/discord', discordRouter);
 let DRINKS = [];
 let DRINK_KEYS = new Set();
 async function refreshMenu() {
-  const data = await apiGet('/menu');
-  DRINKS = data.drinks || [];
-  DRINK_KEYS = new Set(DRINKS.map(d => d.key.toLowerCase()));
+  console.log('[BOT] Refreshing menu from backend...');
+  try {
+    const data = await apiGet('/menu');
+    DRINKS = data.drinks || [];
+    DRINK_KEYS = new Set(DRINKS.map(d => d.key.toLowerCase()));
+    console.log('[BOT] Menu loaded:', DRINKS.length, 'items');
+  } catch (err) {
+    console.error('[BOT] Failed to refresh menu:', err);
+  }
 }
+
 
 // Role assignment
 async function assignRoleIfNeeded(member, lifetime) {
