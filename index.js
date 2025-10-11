@@ -300,6 +300,8 @@ app.get("/flightfirepack", async (req, res) => {
 });
 
 // ---------------- Route for the drink menu -----------------
+import { getMenu } from './discordEconomy.js';
+
 app.get('/menu', async (req, res) => {
   const auth = req.header('Authorization') || '';
   if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
@@ -307,6 +309,7 @@ app.get('/menu', async (req, res) => {
   const drinks = await getMenu();
   res.json({ drinks });
 });
+
 
 
 // ---------------- Flight Cheers Endpoint ----------------
