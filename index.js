@@ -315,6 +315,18 @@ app.get('/menu', async (req, res) => {
   res.json({ drinks });
 });
 
+// ------- Route for balance command -------
+
+app.get('/balance', async (req, res) => {
+  const auth = req.header('Authorization') || '';
+  if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
+
+  const { platform, userId } = req.query;
+  const wallet = getOrInitWallet({ platform, userId });
+  res.json({ ok: true, balance: wallet.balance, lifetimeDrinks: wallet.lifetimeDrinks });
+});
+
+
 // -------- Route for drink purchase -----
 app.post('/purchase', async (req, res) => {
   const auth = req.header('Authorization') || '';
