@@ -43,13 +43,15 @@ export const wallets = new Map(); // key `${platform}:${userId}` -> { balance, l
 const keyOf = ({ platform, userId }) => `${platform}:${userId}`;
 
 export function getOrInitWallet({ platform, userId }) {
-  const k = keyOf({ platform, userId });
+  const k = `${platform}:${userId}`;
+  console.log('[WALLET ACCESS]', k); // Add this line
   if (!wallets.has(k)) {
     wallets.set(k, { balance: 100, lifetimeDrinks: 0 });
-    saveWallets(); // Save when new wallet is created
+    saveWallets();
   }
   return wallets.get(k);
 }
+
 
 export function loadWallets() {
   if (fs.existsSync(WALLET_FILE)) {
