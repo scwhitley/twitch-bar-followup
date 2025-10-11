@@ -171,6 +171,13 @@ client.on('messageCreate', async (msg) => {
       return;
     }
 
+    if (cmd === 'debugmenu') {
+  console.log('[DEBUG] DRINKS:', DRINKS);
+  await msg.reply(`Menu has ${DRINKS.length} items`);
+  return;
+}
+
+
     if (cmd === 'reloadmenu') {
       if (!msg.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
         await msg.reply('Manage Server required.');
