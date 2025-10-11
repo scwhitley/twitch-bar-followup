@@ -10,6 +10,8 @@ import { fetch as undiciFetch } from "undici";
 import { purchaseDrink } from './discordEconomy.js';
 import { getBalance } from './discordEconomy.js';
 import { wallets, getOrInitWallet } from './discordEconomy.js';
+import { loadWallets, saveWallets } from './discordEconomy.js';
+loadWallets();
 const fetch = globalThis.fetch || undiciFetch;
 
 // ---------- Twitch EventSub config ----------
@@ -980,6 +982,13 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
   }
   return res.sendStatus(200);
 });
+
+process.on('exit', saveWallets);
+process.on('SIGINT', () => {
+  saveWallets();
+  process.exit();
+});
+
 
 // ---------------- Start server ----------------
 const PORT = process.env.PORT || 3000;
