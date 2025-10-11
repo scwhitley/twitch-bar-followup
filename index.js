@@ -369,8 +369,10 @@ app.post('/add', async (req, res) => {
   const { platform, userId, amount } = req.body;
   const wallet = getOrInitWallet({ platform, userId });
   wallet.balance += amount;
+  saveWallets(); // ✅ Add this line to persist the change
   res.json({ ok: true, newBalance: wallet.balance });
 });
+
 
 
 
