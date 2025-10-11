@@ -3,6 +3,8 @@
 import 'dotenv/config';
 import express from 'express';
 import discordRouter from '../discord.routes.js';
+import { getMenu } from '../discordEconomy.js';
+
 
 import {
   Client,
