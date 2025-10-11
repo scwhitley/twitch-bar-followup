@@ -8,6 +8,7 @@ import axios from "axios"
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
 import { purchaseDrink } from './discordEconomy.js';
+import { getBalance } from './discordEconomy.js';
 const fetch = globalThis.fetch || undiciFetch;
 
 // ---------- Twitch EventSub config ----------
@@ -311,7 +312,7 @@ app.get('/menu', async (req, res) => {
   res.json({ drinks });
 });
 
-// Route for drink purchase -----
+// -------- Route for drink purchase -----
 app.post('/purchase', async (req, res) => {
   const auth = req.header('Authorization') || '';
   if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
@@ -326,6 +327,23 @@ app.post('/purchase', async (req, res) => {
     console.error('[PURCHASE ERROR]', err);
     res.status(500).json({ ok: false, error: 'Internal error during purchase.' });
   }
+});
+
+// -------- Route for Leaderboard Command ---------
+app.get('/leaderboard', async (req, res) => {
+  const auth = req.header('Authorization') || '';
+  if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
+
+  const all = [];
+  for (const [key, wallet] of wallets.entries()) {
+    const [platform, userId] = key.split(':');
+    if (platform === 'discord') {
+      all.push({ userId, lifetimeDrinks: wallet.lifetimeDrinks });
+    }
+  }
+
+  all.sort((a, b) => b.lifetimeDrinks - a.lifetimeDrinks);
+  res.json({ leaderboard: all.slice(0, 10) }); // top 10
 });
 
 
