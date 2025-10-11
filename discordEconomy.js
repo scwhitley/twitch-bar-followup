@@ -37,7 +37,7 @@ const QUIPS = [
 
 export const wallets = new Map(); // key `${platform}:${userId}` -> { balance, lifetimeDrinks }
 const keyOf = ({ platform, userId }) => `${platform}:${userId}`;
-function getOrInitWallet({ platform, userId }) {
+export function getOrInitWallet({ platform, userId }) {
   const k = keyOf({ platform, userId });
   if (!wallets.has(k)) wallets.set(k, { balance: 100, lifetimeDrinks: 0 });
   return wallets.get(k);
