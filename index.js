@@ -311,6 +311,22 @@ app.get('/menu', async (req, res) => {
   res.json({ drinks });
 });
 
+// Route for drink purchase -----
+app.post('/purchase', async (req, res) => {
+  const auth = req.header('Authorization') || '';
+  if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
+
+  const { platform, userId, command } = req.body;
+  console.log('[PURCHASE]', { platform, userId, command });
+
+  try {
+    const result = await purchaseDrink({ platform, userId, command });
+    res.json(result);
+  } catch (err) {
+    console.error('[PURCHASE ERROR]', err);
+    res.status(500).json({ ok: false, error: 'Internal error during purchase.' });
+  }
+});
 
 
 // ---------------- Flight Cheers Endpoint ----------------
