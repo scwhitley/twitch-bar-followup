@@ -21,7 +21,6 @@ const SE_JWT = process.env.SE_JWT || "";
 const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
 
 // ---------- Discord Mounts ----------
-const app = express();
 app.use(express.json());
 
 
