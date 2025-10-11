@@ -7,6 +7,7 @@ import fs from "fs";
 import axios from "axios"
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
+import { purchaseDrink } from './discordEconomy.js';
 const fetch = globalThis.fetch || undiciFetch;
 
 // ---------- Twitch EventSub config ----------
