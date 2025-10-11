@@ -186,10 +186,12 @@ if (count + 1 === 30) {
     }
 
     if (cmd === 'balance') {
-      const data = await apiGet(`/balance?platform=discord&userId=${msg.author.id}`);
-      await msg.reply(`${msg.author}, your balance is **${data.balance} DD**, lifetime drinks: **${data.lifetimeDrinks}**.`);
-      return;
-    }
+  const userId = msg.mentions.users.first()?.id || msg.author.id;
+  const data = await apiGet(`/balance?platform=discord&userId=${userId}`);
+  await msg.reply(`<@${userId}> has **${data.balance} DD** and **${data.lifetimeDrinks}** drinks.`);
+  return;
+}
+
 
     if (cmd === 'debugmenu') {
   console.log('[DEBUG] DRINKS:', DRINKS);
