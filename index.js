@@ -299,6 +299,15 @@ app.get("/flightfirepack", async (req, res) => {
   }, 5000);
 });
 
+// ---------------- Route for the drink menu -----------------
+app.get('/menu', async (req, res) => {
+  const auth = req.header('Authorization') || '';
+  if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
+
+  const drinks = await getMenu();
+  res.json({ drinks });
+});
+
 
 // ---------------- Flight Cheers Endpoint ----------------
 app.get("/flightcheers", async (req, res) => {
