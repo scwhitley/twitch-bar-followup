@@ -346,6 +346,18 @@ app.get('/leaderboard', async (req, res) => {
   res.json({ leaderboard: all.slice(0, 10) }); // top 10
 });
 
+// --------- Route for Adding DDs -------
+app.post('/add', async (req, res) => {
+  const auth = req.header('Authorization') || '';
+  if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
+
+  const { platform, userId, amount } = req.body;
+  const wallet = getOrInitWallet({ platform, userId });
+  wallet.balance += amount;
+  res.json({ ok: true, newBalance: wallet.balance });
+});
+
+
 
 // ---------------- Flight Cheers Endpoint ----------------
 app.get("/flightcheers", async (req, res) => {
