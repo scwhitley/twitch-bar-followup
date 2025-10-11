@@ -35,7 +35,7 @@ const QUIPS = [
   "We are legally required to say ‘enjoy.’",
 ];
 
-eport const wallets = new Map(); // key `${platform}:${userId}` -> { balance, lifetimeDrinks }
+export const wallets = new Map(); // key `${platform}:${userId}` -> { balance, lifetimeDrinks }
 const keyOf = ({ platform, userId }) => `${platform}:${userId}`;
 function getOrInitWallet({ platform, userId }) {
   const k = keyOf({ platform, userId });
