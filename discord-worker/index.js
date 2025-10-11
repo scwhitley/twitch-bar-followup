@@ -146,11 +146,31 @@ async function assignRoleIfNeeded(member, lifetime) {
   }
 }
 
+const messageCounts = new Map();
+
 // Command router
 client.on('messageCreate', async (msg) => {
   try {
     if (msg.author.bot) return;
     if (!msg.guild || msg.guild.id !== GUILD_ID) return;
+
+    const userId = msg.author.id;
+const count = messageCounts.get(userId) || 0;
+messageCounts.set(userId, count + 1);
+
+if (count + 1 === 30) {
+  try {
+    const result = await apiPost('/add', {
+      platform: 'discord',
+      userId,
+      amount: 50,
+    });
+    await msg.channel.send(`<@${userId}> has earned **50 DD** for being chatty! 🗣️`);
+    console.log(`[CHAT BONUS] 50 DD awarded to ${msg.author.tag}`);
+  } catch (err) {
+    console.error('[CHAT BONUS ERROR]', err);
+  }
+}
 
     const content = msg.content?.trim() || '';
     if (!content.startsWith(PREFIX)) return;
@@ -268,6 +288,21 @@ client.once('ready', async () => {
     });
   } catch (e) {
     console.error('[READY ERROR]', e);
+  }
+});
+
+client.on('guildMemberAdd', async (member) => {
+  try {
+    const result = await apiPost('/add', {
+      platform: 'discord',
+      userId: member.id,
+      amount: 100,
+    });
+
+    await member.send(`🍸 Welcome to The Stirred Veil! You’ve been granted **100 DD** to start your journey.`);
+    console.log(`[JOIN] Granted 100 DD to ${member.user.tag}`);
+  } catch (err) {
+    console.error('[JOIN ERROR]', err);
   }
 });
 
