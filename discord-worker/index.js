@@ -224,6 +224,28 @@ if (count + 1 === 30) {
   return;
 }
 
+    if (cmd === 'rank') {
+  const userId = msg.mentions.users.first()?.id || msg.author.id;
+  const data = await apiGet(`/balance?platform=discord&userId=${userId}`);
+  const tier = tierFor(data.lifetimeDrinks);
+  const roleName = ROLE_LADDER[tier];
+  const nextTier = ROLE_LADDER[tier + 1];
+  const drinksToNext = tier < ROLE_LADDER.length - 1
+    ? (tier + 1) * 10 - data.lifetimeDrinks
+    : null;
+
+  let msgText = `<@${userId}> is a **${roleName}** with **${data.lifetimeDrinks}** drinks.`;
+  if (drinksToNext !== null) {
+    msgText += `\nOnly **${drinksToNext}** more drinks until **${nextTier}**!`;
+  } else {
+    msgText += `\nYou've reached the top tier — cheers to the Likka Master 🍷`;
+  }
+
+  await msg.reply(msgText);
+  return;
+}
+
+
     if (cmd === 'leaderboard') {
   const data = await apiGet('/leaderboard');
   const lines = data.leaderboard.map((entry, i) => {
@@ -270,6 +292,13 @@ if (count + 1 === 30) {
             : null;
           const target = promoChannel || msg.channel;
           await target.send(`${msg.author} leveled up to **${role.name}**. The bottles whispered your name.`);
+          await apiPost('/add', {
+  platform: 'discord',
+  userId: msg.author.id,
+  amount: 200,
+});
+await target.send(`${msg.author} earned **200 DD** for reaching **${role.name}** 🍾`);
+
         }
       }
     }
