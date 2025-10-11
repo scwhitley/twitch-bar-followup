@@ -177,6 +177,31 @@ client.on('messageCreate', async (msg) => {
   return;
 }
 
+    if (cmd === 'adddd') {
+  if (!msg.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+    await msg.reply('Manage Server required.');
+    return;
+  }
+
+  const [_, amtRaw, mention] = content.split(/\s+/);
+  const amount = parseInt(amtRaw);
+  const userId = mention?.replace(/[<@!>]/g, '');
+
+  if (!amount || !userId) {
+    await msg.reply('Usage: `!adddd <amount> <@user>`');
+    return;
+  }
+
+  const result = await apiPost('/add', {
+    platform: 'discord',
+    userId,
+    amount,
+  });
+
+  await msg.reply(`Added **${amount} DD** to <@${userId}>. New balance: **${result.newBalance} DD**`);
+  return;
+}
+
     if (cmd === 'leaderboard') {
   const data = await apiGet('/leaderboard');
   const lines = data.leaderboard.map((entry, i) => {
