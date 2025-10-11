@@ -11,8 +11,8 @@ import { purchaseDrink } from './discordEconomy.js';
 import { getBalance } from './discordEconomy.js';
 import { wallets, getOrInitWallet } from './discordEconomy.js';
 import { loadWallets, saveWallets } from './discordEconomy.js';
-loadWallets();
 const fetch = globalThis.fetch || undiciFetch;
+loadWallets();
 
 // ---------- Twitch EventSub config ----------
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID || "";
