@@ -7,7 +7,7 @@ import axios from "axios"
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
 const fetch = globalThis.fetch || undiciFetch;
-loadWallets();
+
 
 // ---------- Twitch EventSub config ----------
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID || "";
@@ -920,11 +920,7 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
   return res.sendStatus(200);
 });
 
-process.on('exit', saveWallets);
-process.on('SIGINT', () => {
-  saveWallets();
-  process.exit();
-});
+
 
 
 // ---------------- Start server ----------------
