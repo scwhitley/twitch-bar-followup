@@ -1,5 +1,6 @@
 // index.js
 import express from "express";
+import path from "path";
 import crypto from "crypto";
 import 'dotenv/config';
 import fs from "fs";
@@ -23,6 +24,10 @@ const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
 // ---------- Discord Mounts ----------
 const app = express();
 app.use(express.json());
+
+// ------ Global App ---------
+const app = global.app || express();
+
 
 
 // ---------- Award log (shared) ----------
@@ -299,7 +304,33 @@ app.get("/flightfirepack", async (req, res) => {
   }, 5000);
 });
 
+// Serve /public if not already handled
+app.use(express.static("public"));
 
+// In-memory trigger flag for the overlay
+let FOOD_TRIGGER_TS = 0;
+
+// POST /trigger/food-command   -> flip the trigger flag
+app.post("/trigger/food-command", express.json(), (req, res) => {
+  FOOD_TRIGGER_TS = Date.now();
+  res.json({ ok: true, at: FOOD_TRIGGER_TS });
+});
+
+// GET /api/food-command/next   -> overlay polls this; one-shot trigger
+app.get("/api/food-command/next", (req, res) => {
+  if (FOOD_TRIGGER_TS) {
+    const at = FOOD_TRIGGER_TS;
+    FOOD_TRIGGER_TS = 0;
+    return res.json({ trigger: true, at });
+  }
+  res.json({ trigger: false });
+});
+
+// GET /food-command  -> serves the overlay page
+app.get("/food-command", (req, res) => {
+  const filePath = path.join(process.cwd(), "public", "food-command", "index.html");
+  res.sendFile(filePath);
+});
 
 // ---------------- Flight Cheers Endpoint ----------------
 app.get("/flightcheers", async (req, res) => {
