@@ -1,6 +1,7 @@
 // index.js
 import express from "express";
 import path from "path";
+import { fileURLToPath } from "url";
 import crypto from "crypto";
 import 'dotenv/config';
 import fs from "fs";
@@ -8,6 +9,8 @@ import axios from "axios"
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
 const fetch = globalThis.fetch || undiciFetch;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 
 // ---------- Twitch EventSub config ----------
@@ -21,12 +24,11 @@ const TWITCH_REWARD_ID = process.env.TWITCH_REWARD_ID || ""; // optional
 const SE_JWT = process.env.SE_JWT || "";
 const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
 
-// ---------- Discord Mounts ----------
-const app = express();
-app.use(express.json());
 
 // ------ Global App ---------
-const app = global.app || express();
+const app = express();
+app.use(express.json());
+app.use(express.static("public")); // if you serve /public
 
 
 
