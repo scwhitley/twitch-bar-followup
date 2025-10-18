@@ -1,16 +1,11 @@
 // index.js
 import express from "express";
-import discordRouter from './discord.routes.js';
 import crypto from "crypto";
 import 'dotenv/config';
 import fs from "fs";
 import axios from "axios"
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
-import { purchaseDrink } from './discordEconomy.js';
-import { getBalance } from './discordEconomy.js';
-import { wallets, getOrInitWallet } from './discordEconomy.js';
-import { loadWallets, saveWallets } from './discordEconomy.js';
 const fetch = globalThis.fetch || undiciFetch;
 loadWallets();
 
@@ -303,76 +298,6 @@ app.get("/flightfirepack", async (req, res) => {
     // Optional: expose via a shared queue or webhook if needed
   }, 5000);
 });
-
-// ---------------- Route for the drink menu -----------------
-import { getMenu } from './discordEconomy.js';
-
-app.get('/menu', async (req, res) => {
-  const auth = req.header('Authorization') || '';
-  if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
-
-  const drinks = await getMenu();
-  res.json({ drinks });
-});
-
-// ------- Route for balance command -------
-
-app.get('/balance', async (req, res) => {
-  const auth = req.header('Authorization') || '';
-  if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
-
-  const { platform, userId } = req.query;
-  const wallet = getOrInitWallet({ platform, userId });
-  res.json({ ok: true, balance: wallet.balance, lifetimeDrinks: wallet.lifetimeDrinks });
-});
-
-
-// -------- Route for drink purchase -----
-app.post('/purchase', async (req, res) => {
-  const auth = req.header('Authorization') || '';
-  if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
-
-  const { platform, userId, command } = req.body;
-  console.log('[PURCHASE]', { platform, userId, command });
-
-  try {
-    const result = await purchaseDrink({ platform, userId, command });
-    res.json(result);
-  } catch (err) {
-    console.error('[PURCHASE ERROR]', err);
-    res.status(500).json({ ok: false, error: 'Internal error during purchase.' });
-  }
-});
-
-// -------- Route for Leaderboard Command ---------
-app.get('/leaderboard', async (req, res) => {
-  const auth = req.header('Authorization') || '';
-  if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
-
-  const all = [];
-  for (const [key, wallet] of wallets.entries()) {
-    const [platform, userId] = key.split(':');
-    if (platform === 'discord') {
-      all.push({ userId, lifetimeDrinks: wallet.lifetimeDrinks });
-    }
-  }
-
-  all.sort((a, b) => b.lifetimeDrinks - a.lifetimeDrinks);
-  res.json({ leaderboard: all.slice(0, 10) }); // top 10
-});
-
-// --------- Route for Adding DDs -------
-app.post('/add', async (req, res) => {
-  const auth = req.header('Authorization') || '';
-  if (auth !== `Bearer ${process.env.BACKEND_SECRET}`) return res.status(403).send('Forbidden');
-
-  const { platform, userId, amount } = req.body;
-  const wallet = getOrInitWallet({ platform, userId });
-  wallet.balance += amount;
-  saveWallets(); // ✅ Add this line to persist the change
-  res.json({ ok: true, newBalance: wallet.balance });
-});
-
 
 
 
@@ -890,8 +815,6 @@ app.get("/grass/buybrownies", async (req, res) => {
   if (!user) return res.status(400).type("text/plain").send("Missing user");
   const product = PRODUCTS["brownies"];
 
-  // discord route
-  app.use('/discord', discordRouter);
   
   if (mode === "nb") {
     const { nbLine } = buildLinesForBuy({ user, product, newTotal: 0, amount: product.buyInc });
