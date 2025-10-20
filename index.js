@@ -8,9 +8,11 @@ import fs from "fs";
 import axios from "axios"
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
+import { LOVE_TIERS } from "./love-tiers.js";
 const fetch = globalThis.fetch || undiciFetch;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const LOVE_DB_FILE = path.join(__dirname, "love-log.json");
 
 
 // ---------- Twitch EventSub config ----------
@@ -121,6 +123,47 @@ function awardAndLogLater(user, drink, date, amount) {
 }
 
 app.disable("x-powered-by");
+
+
+// ---------------- love tier helpers -------------
+function loadLoveDB() {
+  try {
+    if (!fs.existsSync(LOVE_DB_FILE)) return { streams: {}, order: [] }; // order: newest-first stream ids
+    return JSON.parse(fs.readFileSync(LOVE_DB_FILE, "utf8"));
+  } catch {
+    return { streams: {}, order: [] };
+  }
+}
+function saveLoveDB(db) {
+  try {
+    fs.writeFileSync(LOVE_DB_FILE, JSON.stringify(db, null, 2), "utf8");
+  } catch { /* noop */ }
+}
+function ensureStream(db, streamId) {
+  if (!db.streams[streamId]) {
+    db.streams[streamId] = { createdAt: Date.now(), entries: [] };
+    db.order = db.order.filter(id => id !== streamId);
+    db.order.unshift(streamId);
+    db.order = db.order.slice(0, 50); // cap to 50 recent streams
+  }
+}
+function pickTier(pct) {
+  if (pct <= 30) return "t1";
+  if (pct <= 60) return "t2";
+  if (pct <= 80) return "t3";
+  if (pct <= 90) return "t4";
+  return "t5";
+}
+function pickMessage(tierKey) {
+  const arr = LOVE_TIERS[tierKey] || [];
+  return arr[Math.floor(Math.random() * arr.length)] || "Feelings detected.";
+}
+function sanitizeOneLine(s) {
+  return String(s).replace(/\s+/g, " ").trim();
+}
+function normUser(u) {
+  return String(u || "").replace(/^@+/, "").trim().toLowerCase();
+}
 
 // ---------------- Shared helpers ----------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -383,6 +426,123 @@ app.get("/special", (_req, res) => {
   const { date, drink } = getTodaysSpecial();
   res.type("text/plain").send(`Today's special (${date}) is: ${drink} (+${DAILY_BONUS})`);
 });
+
+// ---------------- Routes for Love Tiers ------------
+
+// Health (optional)
+app.get("/health", (_req, res) => res.type("text/plain").send("OK"));
+
+// Return ONE love line, and log it under a stream bucket
+// Example call used by StreamElements:
+// /love?sender=D4rth_Distortion&target=SomeUser&stream=CHANNEL_OR_DATE
+app.get("/love", (req, res) => {
+  const sender = sanitizeOneLine(req.query.sender || "Someone");
+  const targetRaw = req.query.target || req.query.user || req.query.name || "chat";
+  const target = sanitizeOneLine(targetRaw).replace(/^@+/, "");
+  // Default stream bucket: YYYY-MM-DD (or pass ?stream=${channel} in SE if you prefer)
+  const streamId = sanitizeOneLine(req.query.stream || new Date().toISOString().slice(0, 10));
+
+  const pct = Math.floor(Math.random() * 101); // 0..100
+  const tier = pickTier(pct);
+  const msg = pickMessage(tier);
+  const line = `${sender} loves @${target} ${pct}% — ${msg}`;
+
+  // respond
+  res.set("Cache-Control", "no-store");
+  res.type("text/plain; charset=utf-8").status(200).send(sanitizeOneLine(line));
+
+  // log
+  const db = loadLoveDB();
+  ensureStream(db, streamId);
+  db.streams[streamId].entries.push({
+    ts: Date.now(),
+    sender,
+    target: normUser(target),
+    pct
+  });
+  // keep per-stream size reasonable
+  if (db.streams[streamId].entries.length > 2000) {
+    db.streams[streamId].entries = db.streams[streamId].entries.slice(-2000);
+  }
+  saveLoveDB(db);
+});
+
+// Summarize last 5 streams (or a specific one) for a user
+// /lovelog?user=SomeUser            -> last 5 streams summary
+// /lovelog?user=SomeUser&stream=ID  -> just that stream
+// If ?user is missing, you can pass ?sender=NAME (SE can fill with ${sender})
+app.get("/lovelog", (req, res) => {
+  const who = normUser(req.query.user || req.query.name || req.query.target || req.query.sender);
+  if (!who) {
+    return res.type("text/plain").status(200).send("Usage: /lovelog?user=NAME");
+  }
+
+  const db = loadLoveDB();
+  const streamQ = sanitizeOneLine(req.query.stream || "");
+
+  let streamsToCheck = [];
+  if (streamQ) {
+    if (db.streams[streamQ]) streamsToCheck = [streamQ];
+  } else {
+    streamsToCheck = (db.order || []).slice(0, 5); // newest first
+  }
+
+  const perStream = [];
+  let all = [];
+  for (const id of streamsToCheck) {
+    const entries = (db.streams[id]?.entries || []).filter(e => normUser(e.target) === who);
+    if (entries.length) {
+      const pcts = entries.map(e => e.pct);
+      const avg = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
+      const last = entries[entries.length - 1].pct;
+      perStream.push({ id, avg, last, count: pcts.length });
+      all = all.concat(pcts);
+    } else {
+      perStream.push({ id, avg: null, last: null, count: 0 });
+    }
+  }
+
+  if (!perStream.length) {
+    return res.type("text/plain").status(200).send(`No love data yet for @${who}.`);
+  }
+
+  let out = "";
+  if (streamQ) {
+    const s = perStream[0];
+    out = s.count
+      ? `@${who} — Stream ${s.id}: avg ${s.avg}%, last ${s.last}% (${s.count} rolls)`
+      : `@${who} — Stream ${s.id}: no data.`;
+  } else {
+    if (all.length) {
+      const avgAll = Math.round(all.reduce((a, b) => a + b, 0) / all.length);
+      out = `@${who} — Last ${perStream.length} streams avg ${avgAll}%. `;
+    } else {
+      out = `@${who} — Last ${perStream.length} streams: no data. `;
+    }
+    const parts = perStream.map(s => s.count
+      ? `${s.id}:${s.avg}% (last ${s.last}%)`
+      : `${s.id}:—`);
+    out += parts.join(" | ");
+  }
+
+  res.set("Cache-Control", "no-store");
+  res.type("text/plain; charset=utf-8").status(200).send(sanitizeOneLine(out));
+});
+
+// Optional: start a new stream bucket on demand (useful mid-stream)
+// /lovereset?stream=2025-10-20-2
+app.get("/lovereset", (req, res) => {
+  const streamId = sanitizeOneLine(req.query.stream || "");
+  if (!streamId) {
+    return res.type("text/plain").send("Usage: /lovereset?stream=ID");
+  }
+  const db = loadLoveDB();
+  ensureStream(db, streamId);
+  saveLoveDB(db);
+  res.type("text/plain").send(`Ready: stream ${streamId}`);
+});
+
+
 
 // ---------------- FOLLOWUP (drinks) ----------------
 app.get("/followup", async (req, res) => {
