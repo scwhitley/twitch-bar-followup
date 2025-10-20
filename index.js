@@ -432,6 +432,10 @@ app.get("/special", (_req, res) => {
 // Health (optional)
 app.get("/health", (_req, res) => res.type("text/plain").send("OK"));
 
+ function isValidStreamId(id) {
+  return /^\d{4}-\d{2}-\d{2}/.test(String(id)); // e.g., 2025-10-20 or 2025-10-20-2
+}
+
 // Return ONE love line, and log it under a stream bucket
 // Example call used by StreamElements:
 // /love?sender=D4rth_Distortion&target=SomeUser&stream=CHANNEL_OR_DATE
@@ -466,6 +470,8 @@ app.get("/love", (req, res) => {
   }
   saveLoveDB(db);
 });
+
+
 
 // Summarize last 5 streams (or a specific one) for a user
 // /lovelog?user=SomeUser            -> last 5 streams summary
@@ -525,6 +531,30 @@ app.get("/lovelog", (req, res) => {
     out += parts.join(" | ");
   }
 
+  // perStream built already
+if (!streamQ) {
+  // remove buckets with zero data so they don't print like "…:—"
+  const nonEmpty = perStream.filter(s => s.count > 0);
+  if (!nonEmpty.length) {
+    return res.type("text/plain").status(200).send(`No love data yet for @${who}.`);
+  }
+
+  const all = nonEmpty.flatMap(s => Array(s.count).fill(0).map((_, i) => s.avg)); // or keep your original 'all' calc if you prefer
+  const avgAll = Math.round(
+    nonEmpty.reduce((sum, s) => sum + s.avg * s.count, 0) /
+    nonEmpty.reduce((sum, s) => sum + s.count, 0)
+  );
+
+  let out = `@${who} — Last ${nonEmpty.length} streams avg ${avgAll}%. `;
+  const parts = nonEmpty.map(s => `${s.id}:${s.avg}% (last ${s.last}%)`);
+  return res.set("Cache-Control", "no-store")
+           .type("text/plain; charset=utf-8")
+           .status(200)
+           .send(sanitizeOneLine(out + parts.join(" | ")));
+}
+
+
+ 
   res.set("Cache-Control", "no-store");
   res.type("text/plain; charset=utf-8").status(200).send(sanitizeOneLine(out));
 });
