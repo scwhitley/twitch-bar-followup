@@ -254,21 +254,60 @@ function forceApplyChoice(choiceIdx) {
   FORCE_ACTIVE.lastTouch = Date.now();
 }
 
-function forceResult() {
+function forceResult(publishUser) {
   const s = FORCE_ACTIVE.score;
   let alignment = "gray";
   if (s.jedi >= s.sith && s.jedi >= s.gray) alignment = "jedi";
   else if (s.sith >= s.jedi && s.sith >= s.gray) alignment = "sith";
-  // if equal-high, gray wins only if gray ties highest
   if ((s.gray >= s.jedi && s.gray >= s.sith)) alignment = "gray";
+
+  // Persist alignment
+  if (publishUser) setUserAlignment(publishUser, alignment);
 
   const pool = FORCE_RESULT_LINES[alignment];
   const line = pool[Math.floor(Math.random() * pool.length)] || `Verdict: ${alignment.toUpperCase()}`;
-  const detail = `Score — J:${s.jedi} S:${s.sith} G:${s.gray}.`;
+
   // finalize
   FORCE_ACTIVE = null;
   FORCE_LAST_FINISHED_AT = Date.now();
-  return `${line} ${detail}`;
+
+  // No score in the public message (per your request)
+  return line;
+}
+
+}
+
+// ===== Force persistence (who is Jedi/Sith/Gray) =====
+const FORCE_DB_FILE = path.join(__dirname, "force-assignments.json");
+
+function loadForceDB() {
+  try {
+    if (!fs.existsSync(FORCE_DB_FILE)) return { users: {} };
+    return JSON.parse(fs.readFileSync(FORCE_DB_FILE, "utf8"));
+  } catch {
+    return { users: {} };
+  }
+}
+function saveForceDB(db) {
+  try {
+    fs.writeFileSync(FORCE_DB_FILE, JSON.stringify(db, null, 2), "utf8");
+  } catch { /* noop */ }
+}
+function setUserAlignment(user, alignment) {
+  const db = loadForceDB();
+  const key = String(user).toLowerCase();
+  db.users[key] = { alignment, updatedAt: Date.now() };
+  saveForceDB(db);
+}
+function getFactionCounts() {
+  const db = loadForceDB();
+  let jedi = 0, sith = 0, gray = 0;
+  for (const u of Object.values(db.users)) {
+    if (u.alignment === "jedi") jedi++;
+    else if (u.alignment === "sith") sith++;
+    else gray++;
+  }
+  return { jedi, sith, gray, total: jedi + sith + gray };
 }
 
 
@@ -717,7 +756,7 @@ app.get("/force/answer", (req, res) => {
   forceApplyChoice(choiceIdx);
 
   if (FORCE_ACTIVE.step >= FORCE_QUESTIONS.length) {
-    const verdict = forceResult();
+    const verdict = forceResult(user);
     return res.type("text/plain").send(`@${user} ${verdict}`);
   } else {
     const nextQ = FORCE_QUESTIONS[FORCE_ACTIVE.step].q;
@@ -739,6 +778,14 @@ app.get("/force/cancel", (req, res) => {
   FORCE_ACTIVE = null;
   FORCE_LAST_FINISHED_AT = Date.now();
   res.type("text/plain").send(`@${user} trial canceled.`);
+});
+
+// GET /force/factions  -> "Jedi: X | Sith: Y | Gray: Z | Total: N"
+app.get("/force/factions", (_req, res) => {
+  const { jedi, sith, gray, total } = getFactionCounts();
+  const line = `Factions — Jedi: ${jedi} | Sith: ${sith} | Gray: ${gray} | Total: ${total}`;
+  res.set("Cache-Control", "no-store");
+  res.type("text/plain; charset=utf-8").status(200).send(line);
 });
 
 
