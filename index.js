@@ -275,8 +275,6 @@ function forceResult(publishUser) {
   return line;
 }
 
-}
-
 // ===== Force persistence (who is Jedi/Sith/Gray) =====
 const FORCE_DB_FILE = path.join(__dirname, "force-assignments.json");
 
