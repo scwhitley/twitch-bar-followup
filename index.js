@@ -8,7 +8,12 @@ import fs from "fs";
 import axios from "axios"
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
-import { LOVE_TIERS } from "./love-tiers.js";
+import { Redis } from "@upstash/redis";
+import { LOVE_TIERS } from "./love-tiers.js"; 
+export const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
 const fetch = globalThis.fetch || undiciFetch;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -165,6 +170,40 @@ function normUser(u) {
   return String(u || "").replace(/^@+/, "").trim().toLowerCase();
 }
 
+// Streams index (keep last many): ZSET of streamId with timestamp score
+const LOVE_STREAMS = "love:streams";
+
+function loveKeyUserStream(user, streamId) {
+  return `love:user:${String(user).toLowerCase()}:${streamId}`; // HASH {sum, count, last}
+}
+
+// record one roll
+async function loveRecordRoll({ target, streamId, pct }) {
+  const key = loveKeyUserStream(target, streamId);
+  const now = Date.now();
+  // add stream to index
+  await redis.zadd(LOVE_STREAMS, { score: now, member: streamId });
+
+  // increment stats
+  await redis.hincrby(key, { sum: pct, count: 1 });
+  await redis.hset(key, { last: pct }); // update last
+}
+
+// read last N stream IDs
+async function loveLastNStreams(n = 5) {
+  return await redis.zrevrange(LOVE_STREAMS, 0, n - 1); // newest first
+}
+
+async function loveReadUserStream(user, streamId) {
+  const h = await redis.hgetall(loveKeyUserStream(user, streamId));
+  if (!h || (!h.sum && !h.count)) return null;
+  const sum = Number(h.sum || 0), count = Number(h.count || 0), last = Number(h.last || 0);
+  if (!count) return { avg: null, last: null, count: 0 };
+  const avg = Math.round(sum / count);
+  return { avg, last, count };
+}
+
+
 // ===== Force Trial (Jedi / Sith / Gray) =====
 
 // Config
@@ -254,18 +293,19 @@ function forceApplyChoice(choiceIdx) {
   FORCE_ACTIVE.lastTouch = Date.now();
 }
 
-function forceResult(publishUser) {
+sync function forceResult(publishUser) {
   const s = FORCE_ACTIVE.score;
   let alignment = "gray";
   if (s.jedi >= s.sith && s.jedi >= s.gray) alignment = "jedi";
   else if (s.sith >= s.jedi && s.sith >= s.gray) alignment = "sith";
-  if ((s.gray >= s.jedi && s.gray >= s.sith)) alignment = "gray";
+  if (s.gray >= s.jedi && s.gray >= s.sith) alignment = "gray";
 
   // Persist alignment
-  if (publishUser) setUserAlignment(publishUser, alignment);
+  if (publishUser) await setUserAlignmentRedis(publishUser, alignment);
 
   const pool = FORCE_RESULT_LINES[alignment];
   const line = pool[Math.floor(Math.random() * pool.length)] || `Verdict: ${alignment.toUpperCase()}`;
+
 
   // finalize
   FORCE_ACTIVE = null;
@@ -275,39 +315,36 @@ function forceResult(publishUser) {
   return line;
 }
 
-// ===== Force persistence (who is Jedi/Sith/Gray) =====
-const FORCE_DB_FILE = path.join(__dirname, "force-assignments.json");
+function forceKeyUser(user) {
+  return `force:user:${String(user).toLowerCase()}`; // value: "jedi" | "sith" | "gray"
+}
+function forceKeyCount(side) {
+  return `force:count:${side}`; // integer counters
+}
 
-function loadForceDB() {
-  try {
-    if (!fs.existsSync(FORCE_DB_FILE)) return { users: {} };
-    return JSON.parse(fs.readFileSync(FORCE_DB_FILE, "utf8"));
-  } catch {
-    return { users: {} };
+// Set alignment, keeping counts accurate
+async function setUserAlignmentRedis(user, newAlignment) {
+  const key = forceKeyUser(user);
+  const prev = await redis.get(key); // "jedi" | "sith" | "gray" | null
+
+  if (prev && prev !== newAlignment) {
+    await redis.decr(forceKeyCount(prev));
   }
-}
-function saveForceDB(db) {
-  try {
-    fs.writeFileSync(FORCE_DB_FILE, JSON.stringify(db, null, 2), "utf8");
-  } catch { /* noop */ }
-}
-function setUserAlignment(user, alignment) {
-  const db = loadForceDB();
-  const key = String(user).toLowerCase();
-  db.users[key] = { alignment, updatedAt: Date.now() };
-  saveForceDB(db);
-}
-function getFactionCounts() {
-  const db = loadForceDB();
-  let jedi = 0, sith = 0, gray = 0;
-  for (const u of Object.values(db.users)) {
-    if (u.alignment === "jedi") jedi++;
-    else if (u.alignment === "sith") sith++;
-    else gray++;
+  if (!prev || prev !== newAlignment) {
+    await redis.incr(forceKeyCount(newAlignment));
   }
+  await redis.set(key, newAlignment);
+}
+
+async function getFactionCountsRedis() {
+  const [j, s, g] = await redis.mget(
+    forceKeyCount("jedi"),
+    forceKeyCount("sith"),
+    forceKeyCount("gray")
+  );
+  const jedi = Number(j || 0), sith = Number(s || 0), gray = Number(g || 0);
   return { jedi, sith, gray, total: jedi + sith + gray };
 }
-
 
 
 // ---------------- Shared helpers ----------------
@@ -622,7 +659,7 @@ app.get("/love", (req, res) => {
 // /lovelog?user=SomeUser            -> last 5 streams summary
 // /lovelog?user=SomeUser&stream=ID  -> just that stream
 // If ?user is missing, you can pass ?sender=NAME (SE can fill with ${sender})
-app.get("/lovelog", (req, res) => {
+app.get("/lovelog", async (req, res) => {
   const who = normUser(req.query.user || req.query.name || req.query.target || req.query.sender);
   if (!who) {
     return res.type("text/plain").status(200).send("Usage: /lovelog?user=NAME");
@@ -630,26 +667,20 @@ app.get("/lovelog", (req, res) => {
 
   const db = loadLoveDB();
   const streamQ = sanitizeOneLine(req.query.stream || "");
-
   let streamsToCheck = [];
+  
   if (streamQ) {
-    if (db.streams[streamQ]) streamsToCheck = [streamQ];
+    streamsToCheck = [streamQ];
   } else {
-    streamsToCheck = (db.order || []).slice(0, 5); // newest first
+    streamsToCheck = await loveLastNStreams(5);
   }
 
+  // Build per-stream results, skip empties
   const perStream = [];
-  let all = [];
   for (const id of streamsToCheck) {
-    const entries = (db.streams[id]?.entries || []).filter(e => normUser(e.target) === who);
-    if (entries.length) {
-      const pcts = entries.map(e => e.pct);
-      const avg = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
-      const last = entries[entries.length - 1].pct;
-      perStream.push({ id, avg, last, count: pcts.length });
-      all = all.concat(pcts);
-    } else {
-      perStream.push({ id, avg: null, last: null, count: 0 });
+    const stats = await loveReadUserStream(who, id);
+    if (stats && stats.count > 0) {
+      perStream.push({ id, ...stats });
     }
   }
 
@@ -657,24 +688,24 @@ app.get("/lovelog", (req, res) => {
     return res.type("text/plain").status(200).send(`No love data yet for @${who}.`);
   }
 
-  let out = "";
   if (streamQ) {
     const s = perStream[0];
-    out = s.count
+    const out = s
       ? `@${who} — Stream ${s.id}: avg ${s.avg}%, last ${s.last}% (${s.count} rolls)`
-      : `@${who} — Stream ${s.id}: no data.`;
+      : `@${who} — Stream ${streamQ}: no data.`;
+    return res.type("text/plain").status(200).send(sanitizeOneLine(out));
   } else {
-    if (all.length) {
-      const avgAll = Math.round(all.reduce((a, b) => a + b, 0) / all.length);
-      out = `@${who} — Last ${perStream.length} streams avg ${avgAll}%. `;
-    } else {
-      out = `@${who} — Last ${perStream.length} streams: no data. `;
-    }
-    const parts = perStream.map(s => s.count
-      ? `${s.id}:${s.avg}% (last ${s.last}%)`
-      : `${s.id}:—`);
-    out += parts.join(" | ");
+    // weighted average across the streams displayed
+    const totalCount = perStream.reduce((a, b) => a + b.count, 0);
+    const weighted = Math.round(perStream.reduce((sum, s) => sum + s.avg * s.count, 0) / totalCount);
+    const parts = perStream.map(s => `${s.id}:${s.avg}% (last ${s.last}%)`);
+    const out = `@${who} — Last ${perStream.length} streams avg ${weighted}%. ${parts.join(" | ")}`;
+    return res.set("Cache-Control", "no-store")
+              .type("text/plain; charset=utf-8")
+              .status(200)
+              .send(sanitizeOneLine(out));
   }
+});
 
   // perStream built already
 if (!streamQ) {
@@ -754,13 +785,14 @@ app.get("/force/answer", (req, res) => {
   forceApplyChoice(choiceIdx);
 
   if (FORCE_ACTIVE.step >= FORCE_QUESTIONS.length) {
-    const verdict = forceResult(user);
+    const verdict = await forceResult(user);   // <-- await
     return res.type("text/plain").send(`@${user} ${verdict}`);
   } else {
     const nextQ = FORCE_QUESTIONS[FORCE_ACTIVE.step].q;
     return res.type("text/plain").send(`@${user}, next: ${nextQ} (reply !pick 1 or !pick 2)`);
   }
 });
+
 
 // Cancel (owner only)
 // GET /force/cancel?user=NAME
@@ -779,8 +811,8 @@ app.get("/force/cancel", (req, res) => {
 });
 
 // GET /force/factions  -> "Jedi: X | Sith: Y | Gray: Z | Total: N"
-app.get("/force/factions", (_req, res) => {
-  const { jedi, sith, gray, total } = getFactionCounts();
+app.get("/force/factions", async (_req, res) => {
+  const { jedi, sith, gray, total } = await getFactionCountsRedis();
   const line = `Factions — Jedi: ${jedi} | Sith: ${sith} | Gray: ${gray} | Total: ${total}`;
   res.set("Cache-Control", "no-store");
   res.type("text/plain; charset=utf-8").status(200).send(line);
