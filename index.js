@@ -293,7 +293,7 @@ function forceApplyChoice(choiceIdx) {
   FORCE_ACTIVE.lastTouch = Date.now();
 }
 
-sync function forceResult(publishUser) {
+async function forceResult(publishUser) {
   const s = FORCE_ACTIVE.score;
   let alignment = "gray";
   if (s.jedi >= s.sith && s.jedi >= s.gray) alignment = "jedi";
