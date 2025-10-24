@@ -8,6 +8,7 @@ import fs from "fs";
 import axios from "axios"
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { fetch as undiciFetch } from "undici";
+import { DUEL_ROASTS, RALLY_LINES, BAR_EVENTS, INVASION_STARTS } from "./faction-text.js";
 import { Redis } from "@upstash/redis";
 import { LOVE_TIERS } from "./love-tiers.js"; 
 export const redis = new Redis({
