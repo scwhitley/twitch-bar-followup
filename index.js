@@ -659,20 +659,20 @@ app.get("/love", (req, res) => {
 // /lovelog?user=SomeUser            -> last 5 streams summary
 // /lovelog?user=SomeUser&stream=ID  -> just that stream
 // If ?user is missing, you can pass ?sender=NAME (SE can fill with ${sender})
+// ---------- /lovelog (Redis) ----------
 app.get("/lovelog", async (req, res) => {
   const who = normUser(req.query.user || req.query.name || req.query.target || req.query.sender);
   if (!who) {
     return res.type("text/plain").status(200).send("Usage: /lovelog?user=NAME");
   }
 
-  const db = loadLoveDB();
   const streamQ = sanitizeOneLine(req.query.stream || "");
   let streamsToCheck = [];
-  
+
   if (streamQ) {
     streamsToCheck = [streamQ];
   } else {
-    streamsToCheck = await loveLastNStreams(5);
+    streamsToCheck = await loveLastNStreams(5); // newest first
   }
 
   // Build per-stream results, skip empties
@@ -684,69 +684,40 @@ app.get("/lovelog", async (req, res) => {
     }
   }
 
-  if (!perStream.length) {
-    return res.type("text/plain").status(200).send(`No love data yet for @${who}.`);
-  }
-
   if (streamQ) {
     const s = perStream[0];
     const out = s
       ? `@${who} — Stream ${s.id}: avg ${s.avg}%, last ${s.last}% (${s.count} rolls)`
       : `@${who} — Stream ${streamQ}: no data.`;
-    return res.type("text/plain").status(200).send(sanitizeOneLine(out));
+    return res
+      .type("text/plain")
+      .status(200)
+      .send(sanitizeOneLine(out));
   } else {
-    // weighted average across the streams displayed
+    if (!perStream.length) {
+      return res
+        .type("text/plain")
+        .status(200)
+        .send(`No love data yet for @${who}.`);
+    }
+
+    // weighted average across displayed streams
     const totalCount = perStream.reduce((a, b) => a + b.count, 0);
-    const weighted = Math.round(perStream.reduce((sum, s) => sum + s.avg * s.count, 0) / totalCount);
+    const weighted = Math.round(
+      perStream.reduce((sum, s) => sum + s.avg * s.count, 0) / totalCount
+    );
+
     const parts = perStream.map(s => `${s.id}:${s.avg}% (last ${s.last}%)`);
     const out = `@${who} — Last ${perStream.length} streams avg ${weighted}%. ${parts.join(" | ")}`;
-    return res.set("Cache-Control", "no-store")
-              .type("text/plain; charset=utf-8")
-              .status(200)
-              .send(sanitizeOneLine(out));
+
+    return res
+      .set("Cache-Control", "no-store")
+      .type("text/plain; charset=utf-8")
+      .status(200)
+      .send(sanitizeOneLine(out));
   }
 });
 
-  // perStream built already
-if (!streamQ) {
-  // remove buckets with zero data so they don't print like "…:—"
-  const nonEmpty = perStream.filter(s => s.count > 0);
-  if (!nonEmpty.length) {
-    return res.type("text/plain").status(200).send(`No love data yet for @${who}.`);
-  }
-
-  const all = nonEmpty.flatMap(s => Array(s.count).fill(0).map((_, i) => s.avg)); // or keep your original 'all' calc if you prefer
-  const avgAll = Math.round(
-    nonEmpty.reduce((sum, s) => sum + s.avg * s.count, 0) /
-    nonEmpty.reduce((sum, s) => sum + s.count, 0)
-  );
-
-  let out = `@${who} — Last ${nonEmpty.length} streams avg ${avgAll}%. `;
-  const parts = nonEmpty.map(s => `${s.id}:${s.avg}% (last ${s.last}%)`);
-  return res.set("Cache-Control", "no-store")
-           .type("text/plain; charset=utf-8")
-           .status(200)
-           .send(sanitizeOneLine(out + parts.join(" | ")));
-}
-
-
- 
-  res.set("Cache-Control", "no-store");
-  res.type("text/plain; charset=utf-8").status(200).send(sanitizeOneLine(out));
-});
-
-// Optional: start a new stream bucket on demand (useful mid-stream)
-// /lovereset?stream=2025-10-20-2
-app.get("/lovereset", (req, res) => {
-  const streamId = sanitizeOneLine(req.query.stream || "");
-  if (!streamId) {
-    return res.type("text/plain").send("Usage: /lovereset?stream=ID");
-  }
-  const db = loadLoveDB();
-  ensureStream(db, streamId);
-  saveLoveDB(db);
-  res.type("text/plain").send(`Ready: stream ${streamId}`);
-});
 
 
 // Start a trial
