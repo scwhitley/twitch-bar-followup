@@ -190,10 +190,12 @@ async function loveRecordRoll({ target, streamId, pct }) {
   await redis.hset(key, { last: pct }); // update last
 }
 
-// read last N stream IDs
+// read last N stream IDs (newest first)
 async function loveLastNStreams(n = 5) {
-  return await redis.zrevrange(LOVE_STREAMS, 0, n - 1); // newest first
+  // Upstash client: use zrange with { rev: true } instead of zrevrange
+  return await redis.zrange(LOVE_STREAMS, 0, n - 1, { rev: true });
 }
+
 
 async function loveReadUserStream(user, streamId) {
   const h = await redis.hgetall(loveKeyUserStream(user, streamId));
