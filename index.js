@@ -756,6 +756,98 @@ app.get("/lovelog", async (req, res) => {
   }
 });
 
+// ---------- /duel (Redis) ----------
+// Usage: /duel?challenger=${sender}&target=${1}
+app.get("/duel", async (req, res) => {
+  const challenger = sanitizeOneLine(req.query.challenger || "").replace(/^@+/, "").toLowerCase();
+  const targetRaw  = sanitizeOneLine(req.query.target || "").replace(/^@+/, "").toLowerCase();
+
+  if (!challenger || !targetRaw) {
+    return res.type("text/plain").send("Usage: /duel?challenger=NAME&target=NAME");
+  }
+  if (challenger === targetRaw) {
+    return res.type("text/plain").send(`@${challenger} cannot duel themself. Touch grass, not your reflection.`);
+  }
+
+  // Cooldown check (challenger only)
+  const lastTs = Number(await redis.get(duelLastKey(challenger)) || 0);
+  const now = Date.now();
+  if (now - lastTs < DUEL_COOLDOWN_MS) {
+    const secs = Math.ceil((DUEL_COOLDOWN_MS - (now - lastTs)) / 1000);
+    return res.type("text/plain").send(`@${challenger} duel cooldown: ${secs}s.`);
+  }
+
+  // Alignment checks (anti-grief guardrail)
+  const chalAlign = await getAlignment(challenger);
+  const targAlign = await getAlignment(targetRaw);
+  if (!chalAlign) {
+    return res.type("text/plain").send(`@${challenger} must take the Force Trial first: use !force`);
+  }
+  if (!targAlign) {
+    return res.type("text/plain").send(`@${targetRaw} is unaligned. They must use !force before dueling.`);
+  }
+
+  // Ensure ELO exists
+  const chalElo = await ensureElo(challenger);
+  const targElo = await ensureElo(targetRaw);
+
+  // Special rule: challenging D4rth_Distortion is an autobonk
+  if (targetRaw === D4RTH_USERNAME) {
+    await addFactionPoints("sith", 2); // Sith gets +2
+    const chalNew = Math.max(0, chalElo + ELO_LOSS_VS_D4RTH);
+    await redis.set(eloKey(challenger), chalNew);
+    await redis.set(duelLastKey(challenger), String(now));
+
+    const quip = pick(D4RTH_ROASTS);
+    const out = `@${challenger} challenged @${D4RTH_USERNAME} and instantly lost. +2 Sith. ${quip} (ELO now ${chalNew})`;
+    return res.type("text/plain").send(out);
+  }
+
+  // Normal duel: simple 50/50 (we can weight by ELO later)
+  const roll = Math.random();
+  const winner = roll < 0.5 ? challenger : targetRaw;
+  const loser  = winner === challenger ? targetRaw : challenger;
+
+  const winnerAlign = winner === challenger ? chalAlign : targAlign;
+  const loserAlign  = loser  === challenger ? chalAlign : targAlign;
+
+  // ELO adjustments
+  const winnerElo = await ensureElo(winner);
+  const loserElo  = await ensureElo(loser);
+  const newWinnerElo = winnerElo + ELO_WIN;
+  const newLoserElo  = Math.max(0, loserElo + ELO_LOSS);
+  await redis.set(eloKey(winner), newWinnerElo);
+  await redis.set(eloKey(loser),  newLoserElo);
+
+  // Faction points: +2 for winner's faction if Jedi/Sith. Gray win does not move meter (per current design).
+  if (winnerAlign === "jedi" || winnerAlign === "sith") {
+    await addFactionPoints(winnerAlign, 2);
+  }
+
+  // Loser roast (faction-specific)
+  let roast;
+  if (loser === D4RTH_USERNAME) {
+    // This can't happen because D4rth isn’t allowed to lose, but guard anyway:
+    roast = "The cosmos rejects that outcome.";
+  } else {
+    const pool =
+      loserAlign === "jedi" ? DUEL_ROASTS.jedi :
+      loserAlign === "sith" ? DUEL_ROASTS.sith :
+      DUEL_ROASTS.gray;
+    roast = pick(pool);
+  }
+
+  await redis.set(duelLastKey(challenger), String(now));
+
+  const sideMsg =
+    winnerAlign === "jedi" ? "+2 Jedi." :
+    winnerAlign === "sith" ? "+2 Sith." :
+    "(Gray victory — war meter unchanged.)";
+
+  const out = `@${challenger} vs @${targetRaw} — Winner: @${winner} ${sideMsg} ${roast} (ELO @${winner}:${newWinnerElo} @${loser}:${newLoserElo})`;
+  return res.type("text/plain").send(out);
+});
+
 
 
 // Start a trial
