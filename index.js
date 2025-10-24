@@ -205,6 +205,43 @@ async function loveReadUserStream(user, streamId) {
 }
 
 
+// ----- Duel / ELO / Faction helpers (Redis) -----
+function eloKey(user)          { return `duel:elo:${String(user).toLowerCase()}`; }
+function duelLastKey(user)     { return `duel:last:${String(user).toLowerCase()}`; }
+function warPointsKey(side)    { return `war:points:${side}`; } // side = "jedi" | "sith"
+
+const DUEL_COOLDOWN_MS = 60 * 1000; // 60s cooldown per challenger
+const ELO_START = 1000;
+const ELO_WIN = 15;
+const ELO_LOSS = -10;
+const ELO_LOSS_VS_D4RTH = -10; // loser penalty vs boss
+const D4RTH_USERNAME = "d4rth_distortion"; // case-insensitive match
+
+async function getAlignment(user) {
+  return (await redis.get(`force:user:${String(user).toLowerCase()}`)) || null; // "jedi"|"sith"|"gray"|null
+}
+async function ensureElo(user) {
+  let cur = await redis.get(eloKey(user));
+  if (cur == null) {
+    await redis.set(eloKey(user), ELO_START);
+    cur = ELO_START;
+  }
+  return Number(cur);
+}
+async function addFactionPoints(side, n) {
+  // only Jedi/Sith count for war meter
+  if (side !== "jedi" && side !== "sith") return;
+  await redis.incrby(warPointsKey(side), n);
+}
+function sideLabel(side) {
+  return side === "jedi" ? "Jedi" : side === "sith" ? "Sith" : "Gray";
+}
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+
+
 // ===== Force Trial (Jedi / Sith / Gray) =====
 
 // Config
