@@ -739,30 +739,39 @@ app.get("/force/start", (req, res) => {
 
 // Answer a question
 // GET /force/answer?user=NAME&choice=1
-app.get("/force/answer", (req, res) => {
+// ---------- /force/answer ----------
+app.get("/force/answer", async (req, res) => {
   forceCleanupIfExpired();
+
   const user = sanitizeOneLine(req.query.user || "").replace(/^@+/, "").toLowerCase();
   const choiceStr = String(req.query.choice || "").trim();
-  if (!user || !choiceStr) return res.type("text/plain").send("Usage: /force/answer?user=NAME&choice=1");
 
-  if (!FORCE_ACTIVE) return res.type("text/plain").send("No active trial. Use !force to begin.");
-  if (FORCE_ACTIVE.user !== user) return res.type("text/plain").send(`A trial is running for @${FORCE_ACTIVE.user}. Please wait.`);
+  if (!user || !choiceStr) {
+    return res.type("text/plain").send("Usage: /force/answer?user=NAME&choice=1");
+  }
+  if (!FORCE_ACTIVE) {
+    return res.type("text/plain").send("No active trial. Use !force to begin.");
+  }
+  if (FORCE_ACTIVE.user !== user) {
+    return res.type("text/plain").send(`A trial is running for @${FORCE_ACTIVE.user}. Please wait.`);
+  }
 
   const choiceIdx = parseInt(choiceStr, 10) - 1;
   if (!(choiceIdx === 0 || choiceIdx === 1)) {
-    return res.type("text/plain").send("@"+user+" choose 1 or 2.");
+    return res.type("text/plain").send(`@${user} choose 1 or 2.`);
   }
 
   forceApplyChoice(choiceIdx);
 
   if (FORCE_ACTIVE.step >= FORCE_QUESTIONS.length) {
-    const verdict = await forceResult(user);   // <-- await
+    const verdict = await forceResult(user); // forceResult must be async
     return res.type("text/plain").send(`@${user} ${verdict}`);
   } else {
     const nextQ = FORCE_QUESTIONS[FORCE_ACTIVE.step].q;
     return res.type("text/plain").send(`@${user}, next: ${nextQ} (reply !pick 1 or !pick 2)`);
   }
 });
+
 
 
 // Cancel (owner only)
