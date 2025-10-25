@@ -242,6 +242,84 @@ function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// ===== Convert/Corrupt/Sway helpers (Redis) =====
+const CONVERT_BASE = 0.35; // 35%
+const CONVERT_MIN = 0.15;
+const CONVERT_MAX = 0.75;
+
+const CONVERT_COOLDOWN_SEC = 5 * 60;   // 5m per caster
+const CONVERT_DAILY_LIMIT = 3;         // attempts per caster per day
+const IMMUNITY_HOURS = 24;             // target immunity after success
+
+function dayKeyUTC() {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function convertDailyKey(caster) {
+  return `convert:daily:${dayKeyUTC()}:${String(caster).toLowerCase()}`;
+}
+function convertCooldownKey(caster) {
+  return `convert:cd:${String(caster).toLowerCase()}`;
+}
+function convertImmunityKey(target) {
+  return `convert:immune:${String(target).toLowerCase()}`;
+}
+
+function rallyRecentKey(side) {
+  return `rally:recent:${side}`; // SET of users with TTL ~10m (will come from your !rally)
+}
+function defendMeditateKey(user) { return `defend:meditate:${String(user).toLowerCase()}`; } // 10m TTL
+function defendSeetheKey(user)   { return `defend:seethe:${String(user).toLowerCase()}`; }   // 10m TTL
+function lastWinKey(user)        { return `duel:lastwin:${String(user).toLowerCase()}`; }    // 15m TTL
+function invasionActiveKey()     { return `war:event:invasion:active`; }
+
+async function getElo(user) {
+  const v = await redis.get(eloKey(user));
+  return v == null ? ELO_START : Number(v);
+}
+async function setElo(user, newVal) { await redis.set(eloKey(user), Math.max(0, Number(newVal))); }
+
+// success chance with modifiers
+async function calcConvertChance({ caster, target, casterSide, targetSideForTeamBonus }) {
+  let p = CONVERT_BASE;
+
+  // ELO diff: +10% if caster >= target + 100
+  const [ce, te] = await Promise.all([getElo(caster), getElo(target)]);
+  if (ce >= te + 100) p += 0.10;
+
+  // Recent duel win (15m): +5%
+  const lastWin = await redis.get(lastWinKey(caster));
+  if (lastWin) p += 0.05;
+
+  // Team rally momentum (10m): +5% if >=3 unique on caster's team (or chosen side for Gray's sway)
+  if (casterSide === "jedi" || casterSide === "sith") {
+    const side = targetSideForTeamBonus || casterSide;
+    const count = Number(await redis.scard(rallyRecentKey(side)) || 0);
+    if (count >= 3) p += 0.05;
+  }
+
+  // Target defenses (10m): meditate = -10%, seethe = -10%
+  const [med, see] = await Promise.all([
+    redis.get(defendMeditateKey(target)),
+    redis.get(defendSeetheKey(target)),
+  ]);
+  if (med) p -= 0.10;
+  if (see) p -= 0.10;
+
+  // Invasion bonus: +15%
+  const invasion = await redis.get(invasionActiveKey());
+  if (invasion) p += 0.15;
+
+  // Clamp
+  p = Math.max(CONVERT_MIN, Math.min(CONVERT_MAX, p));
+  return p;
+}
+
+function rollSuccess(prob) { return Math.random() < prob; }
+
+function niceSideLabel(side) {
+  return side === "jedi" ? "Jedi" : side === "sith" ? "Sith" : "Gray";
+}
 
 
 // ===== Force Trial (Jedi / Sith / Gray) =====
@@ -693,6 +771,182 @@ app.get("/love", (req, res) => {
   saveLoveDB(db);
 });
 
+// ---------- /convert/cleanse (to Jedi) ----------
+app.get("/convert/cleanse", async (req, res) => {
+  const caster = sanitizeOneLine(req.query.caster || "").replace(/^@+/, "").toLowerCase();
+  const target = sanitizeOneLine(req.query.target || "").replace(/^@+/, "").toLowerCase();
+  if (!caster || !target) return res.type("text/plain").send("Usage: /convert/cleanse?caster=NAME&target=NAME");
+
+  if (target === D4RTH_USERNAME) {
+    return res.type("text/plain").send(`@${caster} attempts to cleanse @${target}. The cosmos replies: "No."`);
+  }
+
+  const casterSide = await getAlignment(caster);
+  const targetSide = await getAlignment(target);
+  if (casterSide !== "jedi") {
+    return res.type("text/plain").send(`@${caster} must be aligned with the Jedi to use !cleanse. Use !force if unaligned.`);
+  }
+  if (!targetSide) {
+    return res.type("text/plain").send(`@${target} must take the Force Trial first: use !force`);
+  }
+
+  // Cooldown
+  const cdKey = convertCooldownKey(caster);
+  if (await redis.get(cdKey)) {
+    return res.type("text/plain").send(`@${caster} cleanse cooldown active. Try again soon.`);
+  }
+  // Daily limit
+  const dKey = convertDailyKey(caster);
+  const attempts = Number((await redis.get(dKey)) || 0);
+  if (attempts >= CONVERT_DAILY_LIMIT) {
+    return res.type("text/plain").send(`@${caster} reached today's cleanse attempts (${CONVERT_DAILY_LIMIT}).`);
+  }
+  // Target immunity
+  const immKey = convertImmunityKey(target);
+  if (await redis.get(immKey)) {
+    return res.type("text/plain").send(`@${target} is temporarily immune to conversion.`);
+  }
+
+  // Chance
+  const p = await calcConvertChance({ caster, target, casterSide: "jedi", targetSideForTeamBonus: "jedi" });
+  const success = rollSuccess(p);
+
+  // Apply cooldown + count now (attempt spent regardless)
+  await Promise.all([
+    redis.set(cdKey, 1, { ex: CONVERT_COOLDOWN_SEC }),
+    redis.set(dKey, attempts + 1),
+  ]);
+
+  if (!success) {
+    // fail: caster -5 ELO, target +5 ELO
+    const [ce, te] = await Promise.all([getElo(caster), getElo(target)]);
+    await Promise.all([ setElo(caster, ce - 5), setElo(target, te + 5) ]);
+    return res.type("text/plain").send(`@${caster} reaches for the Light... @${target} resists. (${Math.round(p*100)}% chance)`);
+  }
+
+  // success
+  await setUserAlignmentRedis(target, "jedi"); // updates !factions counters
+  await redis.set(immKey, 1, { ex: IMMUNITY_HOURS * 3600 });
+  // optional season point:
+  await redis.incr(`war:season:jedi`);
+
+  return res.type("text/plain").send(`@${caster} bends fate — @${target} joins the Jedi. (${Math.round(p*100)}% chance)`);
+});
+
+
+// ---------- /convert/corrupt (to Sith) ----------
+app.get("/convert/corrupt", async (req, res) => {
+  const caster = sanitizeOneLine(req.query.caster || "").replace(/^@+/, "").toLowerCase();
+  const target = sanitizeOneLine(req.query.target || "").replace(/^@+/, "").toLowerCase();
+  if (!caster || !target) return res.type("text/plain").send("Usage: /convert/corrupt?caster=NAME&target=NAME");
+
+  if (target === D4RTH_USERNAME) {
+    return res.type("text/plain").send(`@${caster} dares corrupt @${target}. Reality prevents the attempt.`);
+  }
+
+  const casterSide = await getAlignment(caster);
+  const targetSide = await getAlignment(target);
+  if (casterSide !== "sith") {
+    return res.type("text/plain").send(`@${caster} must be aligned with the Sith to use !corrupt. Use !force if unaligned.`);
+  }
+  if (!targetSide) {
+    return res.type("text/plain").send(`@${target} must take the Force Trial first: use !force`);
+  }
+
+  const cdKey = convertCooldownKey(caster);
+  if (await redis.get(cdKey)) {
+    return res.type("text/plain").send(`@${caster} corruption cooldown active. Try again soon.`);
+  }
+  const dKey = convertDailyKey(caster);
+  const attempts = Number((await redis.get(dKey)) || 0);
+  if (attempts >= CONVERT_DAILY_LIMIT) {
+    return res.type("text/plain").send(`@${caster} reached today's corrupt attempts (${CONVERT_DAILY_LIMIT}).`);
+  }
+  const immKey = convertImmunityKey(target);
+  if (await redis.get(immKey)) {
+    return res.type("text/plain").send(`@${target} is temporarily immune to conversion.`);
+  }
+
+  const p = await calcConvertChance({ caster, target, casterSide: "sith", targetSideForTeamBonus: "sith" });
+  const success = rollSuccess(p);
+
+  await Promise.all([
+    redis.set(cdKey, 1, { ex: CONVERT_COOLDOWN_SEC }),
+    redis.set(dKey, attempts + 1),
+  ]);
+
+  if (!success) {
+    const [ce, te] = await Promise.all([getElo(caster), getElo(target)]);
+    await Promise.all([ setElo(caster, ce - 5), setElo(target, te + 5) ]);
+    return res.type("text/plain").send(`@${caster} whispers power... @${target} refuses the Dark. (${Math.round(p*100)}% chance)`);
+  }
+
+  await setUserAlignmentRedis(target, "sith"); // updates !factions counters
+  await redis.set(immKey, 1, { ex: IMMUNITY_HOURS * 3600 });
+  await redis.incr(`war:season:sith`);
+
+  return res.type("text/plain").send(`@${caster} corrupts @${target}. Welcome to the Sith. (${Math.round(p*100)}% chance)`);
+});
+
+
+// ---------- /convert/sway (Gray assists one side) ----------
+// /convert/sway?caster=${sender}&target=${1}&side=${2} (side = jedi|sith)
+app.get("/convert/sway", async (req, res) => {
+  const caster = sanitizeOneLine(req.query.caster || "").replace(/^@+/, "").toLowerCase();
+  const target = sanitizeOneLine(req.query.target || "").replace(/^@+/, "").toLowerCase();
+  const side   = String(req.query.side || "").toLowerCase();
+  if (!caster || !target || !["jedi", "sith"].includes(side)) {
+    return res.type("text/plain").send("Usage: /convert/sway?caster=NAME&target=NAME&side=jedi|sith");
+  }
+
+  if (target === D4RTH_USERNAME) {
+    return res.type("text/plain").send(`@${caster} tries to sway @${target}. The Force shakes its head.`);
+  }
+
+  const casterSide = await getAlignment(caster);
+  const targetSide = await getAlignment(target);
+  if (casterSide !== "gray") {
+    return res.type("text/plain").send(`@${caster} must walk the Gray path to use !sway.`);
+  }
+  if (!targetSide) {
+    return res.type("text/plain").send(`@${target} must take the Force Trial first: use !force`);
+  }
+
+  const cdKey = convertCooldownKey(caster);
+  if (await redis.get(cdKey)) {
+    return res.type("text/plain").send(`@${caster} sway cooldown active. Try again soon.`);
+  }
+  const dKey = convertDailyKey(caster);
+  const attempts = Number((await redis.get(dKey)) || 0);
+  if (attempts >= CONVERT_DAILY_LIMIT) {
+    return res.type("text/plain").send(`@${caster} reached today's sway attempts (${CONVERT_DAILY_LIMIT}).`);
+  }
+  const immKey = convertImmunityKey(target);
+  if (await redis.get(immKey)) {
+    return res.type("text/plain").send(`@${target} is temporarily immune to conversion.`);
+  }
+
+  // For Gray, we use chosen side as the "team bonus" side
+  const p = await calcConvertChance({ caster, target, casterSide: "gray", targetSideForTeamBonus: side });
+  const success = rollSuccess(p);
+
+  await Promise.all([
+    redis.set(cdKey, 1, { ex: CONVERT_COOLDOWN_SEC }),
+    redis.set(dKey, attempts + 1),
+  ]);
+
+  if (!success) {
+    const [ce, te] = await Promise.all([getElo(caster), getElo(target)]);
+    await Promise.all([ setElo(caster, ce - 5), setElo(target, te + 5) ]);
+    return res.type("text/plain").send(`@${caster} nudges destiny... @${target} stands firm. (${Math.round(p*100)}% chance)`);
+  }
+
+  await setUserAlignmentRedis(target, side); // updates !factions counters
+  await redis.set(immKey, 1, { ex: IMMUNITY_HOURS * 3600 });
+  await redis.incr(`war:season:${side}`);
+
+  return res.type("text/plain").send(`@${caster} sways @${target} toward the ${niceSideLabel(side)}. (${Math.round(p*100)}% chance)`);
+});
 
 
 // Summarize last 5 streams (or a specific one) for a user
