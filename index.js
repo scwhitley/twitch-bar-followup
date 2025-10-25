@@ -978,6 +978,23 @@ app.get("/invasion/stop", async (req, res) => {
 });
 
 
+// ---------- /elo ----------
+app.get("/elo", async (req, res) => {
+  const whoRaw = sanitizeOneLine(
+    req.query.user || req.query.name || req.query.target || req.query.sender || ""
+  );
+  const who = whoRaw.replace(/^@+/, "").toLowerCase();
+  if (!who) {
+    return res.type("text/plain").send("Usage: /elo?user=NAME");
+  }
+  const [elo, align] = await Promise.all([getElo(who), getAlignment(who)]);
+  const side = align ? align.charAt(0).toUpperCase() + align.slice(1) : "Unaligned";
+  return res
+    .type("text/plain")
+    .send(`@${who} — ELO ${elo} (${side})`);
+});
+
+
 // ---------- /convert/cleanse (to Jedi) ----------
 app.get("/convert/cleanse", async (req, res) => {
   const caster = sanitizeOneLine(req.query.caster || "").replace(/^@+/, "").toLowerCase();
