@@ -242,6 +242,42 @@ function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// ===== Rally / Meditate / Seethe / Events / Invasion config =====
+const RALLY_DAILY_LIMIT = 1;          // once/day per user
+const RALLY_RECENT_TTL_SEC = 10 * 60; // for momentum bonus
+
+const MEDITATE_DAILY_MAX = 5;
+const SEETHE_DAILY_MAX   = 5;
+const MEDITATE_CD_SEC    = 5 * 60;
+const SEETHE_CD_SEC      = 5 * 60;
+const DEFENSE_TTL_SEC    = 10 * 60;   // defend flags for convert modifiers
+
+const ELO_BONUS_PER_USE  = 2;
+const ELO_BONUS_DAILY_CAP= 5;         // max +5 ELO from meditate/seethe per day
+
+const INVASION_DEFAULT_SEC = 180;     // 3 minutes double-points
+const EVENT_MIN_GAP_SEC    = 20;      // small guard so timers don't spam if stacked
+
+// day key
+function dayKeyUTC() { return new Date().toISOString().slice(0, 10); }
+
+// keys
+function rallyDailyKey(user)     { return `rally:daily:${dayKeyUTC()}:${String(user).toLowerCase()}`; }
+function meditateDailyKey(user)  { return `meditate:daily:${dayKeyUTC()}:${String(user).toLowerCase()}`; }
+function meditateCdKey(user)     { return `meditate:cd:${String(user).toLowerCase()}`; }
+function seetheDailyKey(user)    { return `seethe:daily:${dayKeyUTC()}:${String(user).toLowerCase()}`; }
+function seetheCdKey(user)       { return `seethe:cd:${String(user).toLowerCase()}`; }
+function eloDailyBonusKey(user)  { return `elo:bonus:${dayKeyUTC()}:${String(user).toLowerCase()}`; }
+
+function invasionLockKey()       { return `war:event:invasion:lock:${dayKeyUTC()}`; } // once/day start allowed
+function invasionEndsKey()       { return `war:event:invasion:endsAt`; }
+function eventLastKey()          { return `bar:event:last`; }
+
+// side helpers
+function oppSide(side) { return side === "jedi" ? "sith" : side === "sith" ? "jedi" : null; }
+
+
+
 // ===== Convert/Corrupt/Sway helpers (Redis) =====
 const CONVERT_BASE = 0.35; // 35%
 const CONVERT_MIN = 0.15;
@@ -770,6 +806,180 @@ app.get("/love", (req, res) => {
   }
   saveLoveDB(db);
 });
+
+// ---------- /rally ----------
+app.get("/rally", async (req, res) => {
+  const rawUser = sanitizeOneLine(req.query.user || "").replace(/^@+/, "").toLowerCase();
+  const sideQ   = String(req.query.side || "").toLowerCase(); // used only for Gray
+  if (!rawUser) return res.type("text/plain").send("Usage: /rally?user=NAME[&side=jedi|sith]");
+
+  const align = await getAlignment(rawUser);
+  if (!align) return res.type("text/plain").send(`@${rawUser} must take the Force Trial first: use !force`);
+
+  // Limit once per day
+  const dKey = rallyDailyKey(rawUser);
+  if (await redis.get(dKey)) {
+    return res.type("text/plain").send(`@${rawUser} has already rallied today.`);
+  }
+
+  // Determine scoring side
+  let side = align;
+  if (align === "gray") {
+    if (!["jedi","sith"].includes(sideQ)) {
+      return res.type("text/plain").send(`@${rawUser} (Gray) must pick a side: !rally jedi or !rally sith`);
+    }
+    side = sideQ;
+  }
+  if (!["jedi","sith"].includes(side)) {
+    return res.type("text/plain").send(`Rally only affects Jedi or Sith.`);
+  }
+
+  // +1 to chosen side, record recent rally for momentum (10m)
+  await Promise.all([
+    addFactionPoints(side, 1),
+    redis.sadd(rallyRecentKey(side), rawUser),
+    redis.expire(rallyRecentKey(side), RALLY_RECENT_TTL_SEC),
+    redis.set(dKey, 1, { ex: 24 * 3600 }),
+  ]);
+
+  // Flavor line
+  const line = pick(RALLY_LINES[side]) || (side === "jedi" ? "bolsters the Jedi. +1 Jedi." : "feeds the Dark Side. +1 Sith.");
+  return res.type("text/plain").send(`@${rawUser} ${line}`);
+});
+
+async function applyEloDailyBonus(user) {
+  const key = eloDailyBonusKey(user);
+  const used = Number((await redis.get(key)) || 0);
+  if (used >= ELO_BONUS_DAILY_CAP) return null;
+  const newUsed = used + 1;
+  await redis.set(key, newUsed);
+  const cur = await getElo(user);
+  await setElo(user, cur + ELO_BONUS_PER_USE);
+  return newUsed;
+}
+
+// ---------- /meditate ----------
+app.get("/meditate", async (req, res) => {
+  const user = sanitizeOneLine(req.query.user || "").replace(/^@+/, "").toLowerCase();
+  if (!user) return res.type("text/plain").send("Usage: /meditate?user=NAME");
+
+  const align = await getAlignment(user);
+  if (!align) return res.type("text/plain").send(`@${user} must take the Force Trial first: use !force`);
+
+  // cooldown & daily
+  if (await redis.get(meditateCdKey(user))) {
+    return res.type("text/plain").send(`@${user} meditation cooldown active.`);
+  }
+  const count = Number((await redis.get(meditateDailyKey(user))) || 0);
+  if (count >= MEDITATE_DAILY_MAX) {
+    return res.type("text/plain").send(`@${user} reached today's meditate limit (${MEDITATE_DAILY_MAX}).`);
+  }
+
+  // set defend flag (10m), cd, daily++
+  await Promise.all([
+    redis.set(defendMeditateKey(user), 1, { ex: DEFENSE_TTL_SEC }),
+    redis.set(meditateCdKey(user), 1, { ex: MEDITATE_CD_SEC }),
+    redis.set(meditateDailyKey(user), count + 1),
+  ]);
+
+  // ELO bonus (cap +5/day)
+  await applyEloDailyBonus(user);
+
+  // procs (Jedi-leaning)
+  const mySide = "jedi";
+  const other  = oppSide(mySide);
+  let deltaMsg = "";
+  if (Math.random() < 0.10) { await addFactionPoints(mySide, 2); deltaMsg += " +2 Jedi"; }
+  if (Math.random() < 0.05  && other) { await addFactionPoints(other, -1); deltaMsg += " (−1 Sith)"; }
+
+  const base = `@${user} meditates. Mind steady, saber steadier.`;
+  return res.type("text/plain").send(deltaMsg ? `${base}${deltaMsg}` : base);
+});
+
+// ---------- /seethe ----------
+app.get("/seethe", async (req, res) => {
+  const user = sanitizeOneLine(req.query.user || "").replace(/^@+/, "").toLowerCase();
+  if (!user) return res.type("text/plain").send("Usage: /seethe?user=NAME");
+
+  const align = await getAlignment(user);
+  if (!align) return res.type("text/plain").send(`@${user} must take the Force Trial first: use !force`);
+
+  if (await redis.get(seetheCdKey(user))) {
+    return res.type("text/plain").send(`@${user} seethe cooldown active.`);
+  }
+  const count = Number((await redis.get(seetheDailyKey(user))) || 0);
+  if (count >= SEETHE_DAILY_MAX) {
+    return res.type("text/plain").send(`@${user} reached today's seethe limit (${SEETHE_DAILY_MAX}).`);
+  }
+
+  await Promise.all([
+    redis.set(defendSeetheKey(user), 1, { ex: DEFENSE_TTL_SEC }),
+    redis.set(seetheCdKey(user), 1, { ex: SEETHE_CD_SEC }),
+    redis.set(seetheDailyKey(user), count + 1),
+  ]);
+
+  await applyEloDailyBonus(user);
+
+  // procs (Sith-leaning)
+  const mySide = "sith";
+  const other  = oppSide(mySide);
+  let deltaMsg = "";
+  if (Math.random() < 0.10) { await addFactionPoints(mySide, 2); deltaMsg += " +2 Sith"; }
+  if (Math.random() < 0.05  && other) { await addFactionPoints(other, -1); deltaMsg += " (−1 Jedi)"; }
+
+  const base = `@${user} seethes. Rage refined into focus.`;
+  return res.type("text/plain").send(deltaMsg ? `${base}${deltaMsg}` : base);
+});
+
+// ---------- /event/random ----------
+app.get("/event/random", async (_req, res) => {
+  const last = Number((await redis.get(eventLastKey())) || 0);
+  const now  = Date.now();
+  if (now - last < EVENT_MIN_GAP_SEC * 1000) {
+    return res.type("text/plain").send("Event cooling…");
+  }
+  await redis.set(eventLastKey(), now);
+
+  const ev = pick(BAR_EVENTS);
+  if (ev?.effect) {
+    if (typeof ev.effect.jedi === "number") await addFactionPoints("jedi", ev.effect.jedi);
+    if (typeof ev.effect.sith === "number") await addFactionPoints("sith", ev.effect.sith);
+  }
+  const text = ev?.text || "Strange vibes pass through the bar.";
+  return res.type("text/plain").send(`Bar Event: ${text}`);
+});
+
+// ---------- /invasion/start (mods) ----------
+// /invasion/start?by=${sender}[&seconds=180]
+app.get("/invasion/start", async (req, res) => {
+  const by = sanitizeOneLine(req.query.by || "").replace(/^@+/, "").toLowerCase();
+  const sec = Math.max(30, Math.min(900, Number(req.query.seconds || INVASION_DEFAULT_SEC)));
+
+  // allow once per day
+  if (await redis.get(invasionLockKey())) {
+    return res.type("text/plain").send("Invasion already triggered today.");
+  }
+
+  const endsAt = Date.now() + sec * 1000;
+  await Promise.all([
+    redis.set(invasionActiveKey(), 1, { ex: sec }),
+    redis.set(invasionEndsKey(), String(endsAt), { ex: sec + 60 }),
+    redis.set(invasionLockKey(), 1, { ex: 24 * 3600 }),
+  ]);
+
+  const line = pick(INVASION_STARTS) || "Invasion begins — double points!";
+  return res.type("text/plain").send(`@${by} triggers an INVASION: ${line} (ends in ~${sec}s)`);
+});
+
+// ---------- /invasion/stop (mods) ----------
+app.get("/invasion/stop", async (req, res) => {
+  await Promise.all([
+    redis.del(invasionActiveKey()),
+    redis.del(invasionEndsKey()),
+  ]);
+  return res.type("text/plain").send("Invasion ended. Points return to normal.");
+});
+
 
 // ---------- /convert/cleanse (to Jedi) ----------
 app.get("/convert/cleanse", async (req, res) => {
