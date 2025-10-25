@@ -287,9 +287,6 @@ const CONVERT_COOLDOWN_SEC = 5 * 60;   // 5m per caster
 const CONVERT_DAILY_LIMIT = 3;         // attempts per caster per day
 const IMMUNITY_HOURS = 24;             // target immunity after success
 
-function dayKeyUTC() {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-}
 
 function convertDailyKey(caster) {
   return `convert:daily:${dayKeyUTC()}:${String(caster).toLowerCase()}`;
