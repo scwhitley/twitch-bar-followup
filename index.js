@@ -473,19 +473,29 @@ function forceKeyCount(side) {
   return `force:count:${side}`; // integer counters
 }
 
-// Set alignment, keeping counts accurate
-async function setUserAlignmentRedis(user, newAlignment) {
-  const key = forceKeyUser(user);
-  const prev = await redis.get(key); // "jedi" | "sith" | "gray" | null
-
-  if (prev && prev !== newAlignment) {
-    await redis.decr(forceKeyCount(prev));
-  }
-  if (!prev || prev !== newAlignment) {
-    await redis.incr(forceKeyCount(newAlignment));
-  }
-  await redis.set(key, newAlignment);
+function normSide(side) {
+  const s = String(side || "").toLowerCase();
+  return s === "jedi" || s === "sith" || s === "gray" ? s : null;
 }
+
+// Replace your setUserAlignmentRedis with this stricter one
+async function setUserAlignmentRedis(user, newAlignment) {
+  const key = `force:user:${String(user).toLowerCase()}`;
+  const prev = await redis.get(key);
+  const prevSide = normSide(prev);
+  const nextSide = normSide(newAlignment);
+  if (!nextSide) return; // ignore invalid
+
+  // adjust counts if changing between valid sides
+  if (prevSide && prevSide !== nextSide) {
+    await redis.decr(`force:count:${prevSide}`);
+  }
+  if (!prevSide || prevSide !== nextSide) {
+    await redis.incr(`force:count:${nextSide}`);
+  }
+  await redis.set(key, nextSide);
+}
+
 
 async function getFactionCountsRedis() {
   const [j, s, g] = await redis.mget(
@@ -769,39 +779,44 @@ app.get("/health", (_req, res) => res.type("text/plain").send("OK"));
   return /^\d{4}-\d{2}-\d{2}/.test(String(id)); // e.g., 2025-10-20 or 2025-10-20-2
 }
 
-// Return ONE love line, and log it under a stream bucket
-// Example call used by StreamElements:
-// /love?sender=D4rth_Distortion&target=SomeUser&stream=CHANNEL_OR_DATE
-app.get("/love", (req, res) => {
+// ---------- /love (Redis-backed) ----------
+// Returns ONE love line and logs it under a stream bucket.
+// Example (SE):
+//   ${if ${1}==""}
+//   ${urlfetch https://twitch-bar-followup.onrender.com/love?sender=${sender}&target=${sender}}
+//   ${else}
+//   ${urlfetch https://twitch-bar-followup.onrender.com/love?sender=${sender}&target=${1}}
+//   ${endif}
+app.get("/love", async (req, res) => {
   const sender = sanitizeOneLine(req.query.sender || "Someone");
-  const targetRaw = req.query.target || req.query.user || req.query.name || "chat";
-  const target = sanitizeOneLine(targetRaw).replace(/^@+/, "");
-  // Default stream bucket: YYYY-MM-DD (or pass ?stream=${channel} in SE if you prefer)
-  const streamId = sanitizeOneLine(req.query.stream || new Date().toISOString().slice(0, 10));
 
-  const pct = Math.floor(Math.random() * 101); // 0..100
+  // Default to sender if no explicit target provided
+  const rawTarget =
+    req.query.target || req.query.user || req.query.name || req.query.touser || sender;
+  const target = sanitizeOneLine(rawTarget).replace(/^@+/, "");
+  const who = normUser(target);
+
+  // Default stream bucket: YYYY-MM-DD (or pass ?stream=${channel} if you prefer per-channel)
+  const streamId = sanitizeOneLine(
+    req.query.stream || new Date().toISOString().slice(0, 10)
+  );
+
+  const pct  = Math.floor(Math.random() * 101); // 0..100
   const tier = pickTier(pct);
-  const msg = pickMessage(tier);
-  const line = `${sender} loves @${target} ${pct}% — ${msg}`;
+  const msg  = pickMessage(tier);
+  const line = `${sender} loves @${who} ${pct}% — ${msg}`;
 
-  // respond
-  res.set("Cache-Control", "no-store");
-  res.type("text/plain; charset=utf-8").status(200).send(sanitizeOneLine(line));
+  // Respond immediately
+  res
+    .set("Cache-Control", "no-store")
+    .type("text/plain; charset=utf-8")
+    .status(200)
+    .send(sanitizeOneLine(line));
 
-  // log
-  const db = loadLoveDB();
-  ensureStream(db, streamId);
-  db.streams[streamId].entries.push({
-    ts: Date.now(),
-    sender,
-    target: normUser(target),
-    pct
-  });
-  // keep per-stream size reasonable
-  if (db.streams[streamId].entries.length > 2000) {
-    db.streams[streamId].entries = db.streams[streamId].entries.slice(-2000);
-  }
-  saveLoveDB(db);
+  // Log to Redis (so /lovelog sees it). Fire-and-forget to avoid blocking chat.
+  loveRecordRoll({ target: who, streamId, pct }).catch((e) =>
+    console.error("loveRecordRoll failed:", e?.message || e)
+  );
 });
 
 // ---------- /rally ----------
@@ -980,18 +995,21 @@ app.get("/invasion/stop", async (req, res) => {
 
 // ---------- /elo ----------
 app.get("/elo", async (req, res) => {
-  const whoRaw = sanitizeOneLine(
-    req.query.user || req.query.name || req.query.target || req.query.sender || ""
-  );
-  const who = whoRaw.replace(/^@+/, "").toLowerCase();
-  if (!who) {
-    return res.type("text/plain").send("Usage: /elo?user=NAME");
+  try {
+    const whoRaw = sanitizeOneLine(
+      req.query.user || req.query.name || req.query.target || req.query.sender || ""
+    );
+    const who = whoRaw.replace(/^@+/, "").toLowerCase();
+    if (!who) return res.type("text/plain").send("Usage: /elo?user=NAME");
+
+    // ensure ELO exists so it's never undefined
+    const [elo, align] = await Promise.all([ensureElo(who), getAlignment(who)]);
+    const side = align ? align.charAt(0).toUpperCase() + align.slice(1) : "Unaligned";
+    return res.type("text/plain").send(`@${who} — ELO ${elo} (${side})`);
+  } catch (err) {
+    console.error("elo route error:", err);
+    return res.type("text/plain").send("ELO: unavailable right now.");
   }
-  const [elo, align] = await Promise.all([getElo(who), getAlignment(who)]);
-  const side = align ? align.charAt(0).toUpperCase() + align.slice(1) : "Unaligned";
-  return res
-    .type("text/plain")
-    .send(`@${who} — ELO ${elo} (${side})`);
 });
 
 
@@ -1172,6 +1190,18 @@ app.get("/convert/sway", async (req, res) => {
   return res.type("text/plain").send(`@${caster} sways @${target} toward the ${niceSideLabel(side)}. (${Math.round(p*100)}% chance)`);
 });
 
+// ---------- /war ----------
+app.get("/war", async (_req, res) => {
+  const [jp, sp] = await Promise.all([
+    redis.get("war:points:jedi"),
+    redis.get("war:points:sith"),
+  ]);
+  const jedi = Number(jp || 0);
+  const sith = Number(sp || 0);
+  return res.type("text/plain")
+    .send(`War — Jedi: ${jedi} | Sith: ${sith}`);
+});
+
 
 // Summarize last 5 streams (or a specific one) for a user
 // /lovelog?user=SomeUser            -> last 5 streams summary
@@ -1179,40 +1209,47 @@ app.get("/convert/sway", async (req, res) => {
 // If ?user is missing, you can pass ?sender=NAME (SE can fill with ${sender})
 // ---------- /lovelog (Redis) ----------
 app.get("/lovelog", async (req, res) => {
-  const who = normUser(req.query.user || req.query.name || req.query.target || req.query.sender);
-  if (!who) {
-    return res.type("text/plain").status(200).send("Usage: /lovelog?user=NAME");
-  }
-
-  const streamQ = sanitizeOneLine(req.query.stream || "");
-  let streamsToCheck = [];
-
-  if (streamQ) {
-    streamsToCheck = [streamQ];
-  } else {
-    streamsToCheck = await loveLastNStreams(5); // newest first
-  }
-
-  // Build per-stream results, skip empties
-  const perStream = [];
-  for (const id of streamsToCheck) {
-    const stats = await loveReadUserStream(who, id);
-    if (stats && stats.count > 0) {
-      perStream.push({ id, ...stats });
+  try {
+    const who = normUser(
+      req.query.user || req.query.name || req.query.target || req.query.sender
+    );
+    if (!who) {
+      return res.type("text/plain").status(200).send("Usage: /lovelog?user=NAME");
     }
-  }
 
-  if (streamQ) {
-    const s = perStream[0];
-    const out = s
-      ? `@${who} — Stream ${s.id}: avg ${s.avg}%, last ${s.last}% (${s.count} rolls)`
-      : `@${who} — Stream ${streamQ}: no data.`;
-    return res
-      .type("text/plain")
-      .status(200)
-      .send(sanitizeOneLine(out));
-  } else {
-    if (!perStream.length) {
+    const streamQ = sanitizeOneLine(req.query.stream || "");
+    let streamsToCheck;
+    if (streamQ) {
+      streamsToCheck = [streamQ];
+    } else {
+      streamsToCheck = await loveLastNStreams(5); // newest first
+    }
+
+    if (!streamsToCheck || streamsToCheck.length === 0) {
+      return res.type("text/plain").status(200).send(`No love data yet for @${who}.`);
+    }
+
+    // read all streams in parallel, keep only non-empty
+    const statsList = await Promise.all(
+      streamsToCheck.map(async (id) => {
+        const s = await loveReadUserStream(who, id);
+        return s && s.count > 0 ? { id, ...s } : null;
+      })
+    );
+    const perStream = statsList.filter(Boolean);
+
+    if (streamQ) {
+      const s = perStream[0];
+      const out = s
+        ? `@${who} — Stream ${s.id}: avg ${s.avg}%, last ${s.last}% (${s.count} rolls)`
+        : `@${who} — Stream ${streamQ}: no data.`;
+      return res
+        .type("text/plain")
+        .status(200)
+        .send(sanitizeOneLine(out));
+    }
+
+    if (perStream.length === 0) {
       return res
         .type("text/plain")
         .status(200)
@@ -1220,21 +1257,31 @@ app.get("/lovelog", async (req, res) => {
     }
 
     // weighted average across displayed streams
-    const totalCount = perStream.reduce((a, b) => a + b.count, 0);
-    const weighted = Math.round(
-      perStream.reduce((sum, s) => sum + s.avg * s.count, 0) / totalCount
+    const totalCount = perStream.reduce((a, s) => a + s.count, 0);
+    const weighted =
+      totalCount > 0
+        ? Math.round(perStream.reduce((sum, s) => sum + s.avg * s.count, 0) / totalCount)
+        : 0;
+
+    const parts = perStream.map(
+      (s) => `${s.id}:${s.avg}% (last ${s.last}%)`
     );
 
-    const parts = perStream.map(s => `${s.id}:${s.avg}% (last ${s.last}%)`);
     const out = `@${who} — Last ${perStream.length} streams avg ${weighted}%. ${parts.join(" | ")}`;
-
     return res
       .set("Cache-Control", "no-store")
       .type("text/plain; charset=utf-8")
       .status(200)
       .send(sanitizeOneLine(out));
+  } catch (err) {
+    console.error("lovelog error:", err);
+    return res
+      .type("text/plain")
+      .status(200)
+      .send("No love data yet (backend busy).");
   }
 });
+
 
 // ---------- /duel (Redis) ----------
 // Usage: /duel?challenger=${sender}&target=${1}
