@@ -43,7 +43,6 @@ export function generateBackstory({ userId, gender = Gender.UNKNOWN, overrideSee
   const seed = overrideSeed ?? seedFrom(userId, gender, Date.now().toString());
   const rng = makeRng(seed);
 
-  const origin = pick(rng, ORIGINS);
   
   const name = nameForGender(rng, gender === Gender.UNKNOWN ? Gender.NONBINARY : gender); // fallback to neutral pool
   const origin = pick(rng, ORIGINS);
