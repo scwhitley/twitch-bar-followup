@@ -22,7 +22,8 @@ const fetch = globalThis.fetch || undiciFetch;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const LOVE_DB_FILE = path.join(__dirname, "love-log.json");
-const TOKEN = process.env.DISCORD_TOKEN; // set in Render env vars
+const TOKEN = (process.env.DISCORD_TOKEN || "").trim();
+ // set in Render env vars
 if (!TOKEN) {
   console.error("Missing DISCORD_TOKEN env var.");
   process.exit(1);
