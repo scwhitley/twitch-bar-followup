@@ -4,6 +4,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
 import 'dotenv/config';
+import { Client, GatewayIntentBits, Partials } from "discord.js";
+import { onMessageCreate, onInteractionCreate } from "./backstory-command.js";
 import fs from "fs";
 import axios from "axios"
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
@@ -19,6 +21,11 @@ const fetch = globalThis.fetch || undiciFetch;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const LOVE_DB_FILE = path.join(__dirname, "love-log.json");
+const TOKEN = process.env.DISCORD_TOKEN; // set in Render env vars
+if (!TOKEN) {
+  console.error("Missing DISCORD_TOKEN env var.");
+  process.exit(1);
+}
 
 
 // ---------- Twitch EventSub config ----------
@@ -38,7 +45,24 @@ const app = express();
 app.use(express.json());
 app.use(express.static("public")); // if you serve /public
 
+// --- Discord client ---
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent, // required for !backstory
+  ],
+  partials: [Partials.Channel],
+});
 
+client.on("ready", () => console.log(`Logged in as ${client.user.tag}`));
+client.on("messageCreate", onMessageCreate);
+client.on("interactionCreate", onInteractionCreate);
+
+client.login(TOKEN).catch((err) => {
+  console.error("Discord login failed:", err);
+  process.exit(1);
+});
 
 // ---------- Award log (shared) ----------
 const AWARD_LOG_FILE = "./award-log.json";
