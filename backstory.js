@@ -4,13 +4,8 @@ import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
 import { applyPronouns, pronounsFor } from "./pronouns.js";
 
 
-const ORIGINS = [
-  { planet: "Earth", region: "New York" },
-  { planet: "Korriban-like", region: "Valley of Echoes" },
-  { planet: "Corelia-like", region: "Shipwright Quarter" },
-  { planet: "Mars Annex", region: "Cinder Rim" },
-  { planet: "Europa Freeport", region: "Ice Bazaar" },
-];
+const origin = pick(rng, ORIGINS);
+
 
 const PERSONALITIES = [
   "calculating","loyal","stoic","brutally honest","charismatic","ruthless"
