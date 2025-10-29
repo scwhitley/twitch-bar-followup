@@ -47,6 +47,12 @@ export function generateBackstory({ userId, gender = Gender.UNKNOWN, overrideSee
   
   const name = nameForGender(rng, gender === Gender.UNKNOWN ? Gender.NONBINARY : gender); // fallback to neutral pool
   const origin = pick(rng, ORIGINS);
+  const originPlace = origin.state && origin.city
+    ? `${origin.state} > ${origin.city}`
+    : (origin.region || "somewhere uncharted");
+  const p = pronounsFor(gender);
+  const isPlural = (gender === Gender.NONBINARY || gender === Gender.UNKNOWN);
+  const wasWere = isPlural ? "were" : "was";
   const personality = pick(rng, PERSONALITIES);
   const goal = pick(rng, GOALS);
   const flaw = pick(rng, FLAWS);
