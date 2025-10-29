@@ -17,7 +17,7 @@ export const COMPANIES = [
     ],
   },
   {
-    name: "Stirred Viel",
+    name: "The Stirred Veil",
     roles: [
       { title: "Bar Manager", description: "Keeps spirits high, both literally and emotionally." },
       { title: "Bartender", description: "Mixes chaos, confidence, and cocktails with equal precision." },
@@ -48,4 +48,18 @@ export const COMPANIES = [
       { title: "HR Manager", description: "Mediates disputes between clients, coworkers, and the occasional ghost tenant." },
     ],
   },
+];
+
+// ✅ QUIRKS must be declared *outside* the COMPANIES array
+export const QUIRKS = [
+  "Free stale donuts every Monday.",
+  "Discounts on existential dread.",
+  "Company motto: 'What could possibly go wrong?'",
+  "Weekly 'mandatory fun' meetings. Good luck.",
+  "You get paid in Distortion Dollars™.",
+  "Uniform color: Anxiety Gray.",
+  "Access to the secret breakroom dimension.",
+  "Comes with complimentary chaos insurance.",
+  "All complaints go directly into a black hole.",
+  "Your new boss is definitely watching you through the security cams right now."
 ];
