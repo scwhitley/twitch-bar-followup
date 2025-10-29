@@ -59,10 +59,10 @@ export function generateBackstory({ userId, gender = Gender.UNKNOWN, overrideSee
   // lightweight prose with pronoun tokens
   const p = pronounsFor(gender);
   let prose = [
-    `{They} were raised on ${origin.planet}, in ${origin.region}, where deals are inked in shadows and paid in favors.`,
-    `Known for being ${personality}, ${p.they} learned early that silence travels faster than rumor.`,
-    `Now, ${p.they} seeks to ${goal}, even if it means embracing the parts of ${p.their} past ${p.they} swore to bury.`,
-  ].join(" ");
+  `${p.They} ${wasWere} raised on ${origin.planet}, in ${originPlace}, where deals are inked in shadows and paid in favors.`,
+  `Known for being ${personality}, ${p.they} learned early that silence travels faster than rumor.`,
+  `Now, ${p.they} seeks to ${goal}, even if it means embracing the parts of ${p.their} past ${p.they} swore to bury.`
+].join(" ");
 
   prose = applyPronouns(prose, gender);
 
