@@ -160,7 +160,7 @@ export async function onMessageCreate(message) {
     );
   }
 
-  // ----- !fire @user -----
+  /  // ----- !fire @user -----
   if (content.startsWith("!fire")) {
     if (
       !message.member.permissions.has(PermissionsBitField.Flags.KickMembers)
@@ -180,7 +180,44 @@ export async function onMessageCreate(message) {
       `📉 **${target.username}** was fired from **${released.company}** as **${released.title}**. ${line}`
     );
   }
-}
+
+  // ----- !resetjobs -----
+  if (content.startsWith("!resetjobs")) {
+    if (
+      !message.member.permissions.has(PermissionsBitField.Flags.Administrator)
+    ) {
+      return void message.reply("🚫 You don't have permission to reset all jobs.");
+    }
+
+    try {
+      // Fetch all job keys in Redis
+      const keys = await redis.keys("job:*");
+      if (keys.length === 0) {
+        return void message.reply("There are no jobs to reset.");
+      }
+
+      // Delete all job-related keys
+      await redis.del(...keys);
+
+      const funnyResponses = [
+        "🔥 HR just hit the big red button — all employees have been 'let go'.",
+        "🚪 Everyone’s been escorted out. The offices echo with silence.",
+        "📉 The economy crashed. Every company folded. Nice work.",
+        "💥 All job data wiped. It's a brand new employment apocalypse.",
+      ];
+
+      const rng = makeRng(seedFrom(Date.now().toString()));
+      const line = pick(rng, funnyResponses);
+
+      await message.channel.send(
+        `⚠️ **All job data has been reset.**\n${line}`
+      );
+    } catch (err) {
+      console.error("Job reset error:", err);
+      await message.reply("❌ Something went wrong trying to reset all jobs.");
+    }
+  }
+
 
 // ---------------------- BUTTON HANDLER --------------------
 
