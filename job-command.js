@@ -160,7 +160,7 @@ export async function onMessageCreate(message) {
     );
   }
 
-  /  // ----- !fire @user -----
+// ----- !fire @user -----
   if (content.startsWith("!fire")) {
     if (
       !message.member.permissions.has(PermissionsBitField.Flags.KickMembers)
