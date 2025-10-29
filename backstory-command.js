@@ -11,6 +11,17 @@ const BTN_COOLDOWN_S = 4;
 const cmdCooldown = new Map();
 const btnCooldown = new Map();
 
+const originValue = payload.origin.state && payload.origin.city
+  ? `${payload.origin.planet} → ${payload.origin.state} > ${payload.origin.city}`
+  : `${payload.origin.planet} → ${payload.origin.region}`;
+
+.addFields(
+  // ...
+  { name: "Origin", value: originValue, inline: true },
+  // ...
+);
+
+
 // CustomId helper (safe and short)
 function makeId(kind, data = {}) {
   // e.g., bs:reroll:name|g=nb|s=12345
