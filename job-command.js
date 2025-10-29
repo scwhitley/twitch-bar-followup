@@ -181,7 +181,7 @@ export async function onMessageCreate(message) {
     );
   }
 
-  // ----- !resetjobs -----
+    // ----- !resetjobs -----
   if (content.startsWith("!resetjobs")) {
     if (
       !message.member.permissions.has(PermissionsBitField.Flags.Administrator)
@@ -190,13 +190,11 @@ export async function onMessageCreate(message) {
     }
 
     try {
-      // Fetch all job keys in Redis
       const keys = await redis.keys("job:*");
       if (keys.length === 0) {
         return void message.reply("There are no jobs to reset.");
       }
 
-      // Delete all job-related keys
       await redis.del(...keys);
 
       const funnyResponses = [
@@ -216,7 +214,54 @@ export async function onMessageCreate(message) {
       console.error("Job reset error:", err);
       await message.reply("❌ Something went wrong trying to reset all jobs.");
     }
+  } // 👈 CLOSES the onMessageCreate function properly
+} // 👈 VERY IMPORTANT: this closes the entire function block
+
+// ---------------------- BUTTON HANDLER --------------------
+
+export async function onInteractionCreate(interaction) {
+  if (!interaction.isButton()) return;
+  const parsed = parseId(interaction.customId);
+  if (!parsed) return;
+
+  if (parsed.kind === "reroll") {
+    const cd = coolDownCheck(rerollCooldown, interaction.user.id, REROLL_COOLDOWN_S);
+    if (cd > 0)
+      return void interaction.reply({
+        content: `🕓 You already rerolled recently — wait ${cd}s.`,
+        ephemeral: true,
+      });
+
+    const current = await getUserJob(interaction.user.id);
+    if (current) {
+      const { company, title } = JSON.parse(current);
+      await redis.del(`job:slots:${company}:${title}`);
+    }
+
+    const job = await generateJob(interaction.user.id);
+    if (!job)
+      return void interaction.reply({
+        content: `😔 All positions are filled right now!`,
+        ephemeral: true,
+      });
+
+    await assignJob(interaction.user.id, job.company, job.title);
+
+    const embed = buildJobEmbed(interaction.member ?? interaction.user, job);
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel("🎲 Reroll Used")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true)
+    );
+
+    try {
+      await interaction.update({ embeds: [embed], components: [row] });
+    } catch {
+      await interaction.reply({ embeds: [embed], components: [row] });
+    }
   }
+}
 
 
 // ---------------------- BUTTON HANDLER --------------------
