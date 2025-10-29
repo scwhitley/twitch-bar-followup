@@ -14,6 +14,10 @@ import { fetch as undiciFetch } from "undici";
 import { DUEL_ROASTS, RALLY_LINES, BAR_EVENTS, INVASION_STARTS } from "./faction-text.js";
 import { Redis } from "@upstash/redis";
 import { LOVE_TIERS } from "./love-tiers.js"; 
+import {
+  onMessageCreate as onJobMessage,
+  onInteractionCreate as onJobInteraction,
+} from "./job-command.js";
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
@@ -60,6 +64,15 @@ const client = new Client({
 client.on("ready", () => console.log(`Logged in as ${client.user.tag}`));
 client.on("messageCreate", onMessageCreate);
 client.on("interactionCreate", onInteractionCreate);
+client.on("messageCreate", (msg) => {
+  onMessageCreate(msg); // your existing backstory handler
+  onJobMessage(msg);    // 👈 add this line
+});
+
+client.on("interactionCreate", (int) => {
+  onInteractionCreate(int); // existing
+  onJobInteraction(int);    // 👈 add this line
+});
 
 client.login(TOKEN).catch((err) => {
   console.error("Discord login failed:", err);
