@@ -117,7 +117,6 @@ function buildJobButtons(seed) {
 }
 
 // ---------------------- COMMANDS --------------------------
-
 export async function onMessageCreate(message) {
   if (message.author.bot) return;
   const content = message.content?.trim().toLowerCase();
@@ -145,7 +144,6 @@ export async function onMessageCreate(message) {
 
     const embed = buildJobEmbed(message.member ?? message.author, job);
     const components = buildJobButtons(seedFrom(message.author.id, "first"));
-
     await message.channel.send({ embeds: [embed], components });
   }
 
@@ -160,17 +158,14 @@ export async function onMessageCreate(message) {
     );
   }
 
-// ----- !fire @user -----
+  // ----- !fire @user -----
   if (content.startsWith("!fire")) {
-    if (
-      !message.member.permissions.has(PermissionsBitField.Flags.KickMembers)
-    ) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
       return void message.reply("You don't have permission to fire anyone!");
     }
 
     const target = message.mentions.users.first();
-    if (!target)
-      return void message.reply("You need to mention someone to fire.");
+    if (!target) return void message.reply("You need to mention someone to fire.");
 
     const released = await releaseJob(target.id);
     if (!released)
@@ -181,7 +176,7 @@ export async function onMessageCreate(message) {
     );
   }
 
-     // ----- !resetjobs -----
+  // ----- !resetjobs -----
   if (content.startsWith("!resetjobs")) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return void message.reply("🚫 You don't have permission to reset all jobs.");
@@ -243,100 +238,6 @@ export async function onInteractionCreate(interaction) {
         ephemeral: true,
       });
     }
-
-    await assignJob(interaction.user.id, job.company, job.title);
-
-    const embed = buildJobEmbed(interaction.member ?? interaction.user, job);
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel("🎲 Reroll Used")
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true)
-    );
-
-    try {
-      await interaction.update({ embeds: [embed], components: [row] });
-    } catch {
-      await interaction.reply({ embeds: [embed], components: [row] });
-    }
-  }
-}
-
-
-// ---------------------- BUTTON HANDLER --------------------
-
-export async function onInteractionCreate(interaction) {
-  if (!interaction.isButton()) return;
-  const parsed = parseId(interaction.customId);
-  if (!parsed) return;
-
-  if (parsed.kind === "reroll") {
-    const cd = coolDownCheck(rerollCooldown, interaction.user.id, REROLL_COOLDOWN_S);
-    if (cd > 0)
-      return void interaction.reply({
-        content: `🕓 You already rerolled recently — wait ${cd}s.`,
-        ephemeral: true,
-      });
-
-    const current = await getUserJob(interaction.user.id);
-    if (current) {
-      const { company, title } = JSON.parse(current);
-      await redis.del(`job:slots:${company}:${title}`);
-    }
-
-    const job = await generateJob(interaction.user.id);
-    if (!job)
-      return void interaction.reply({
-        content: `😔 All positions are filled right now!`,
-        ephemeral: true,
-      });
-
-    await assignJob(interaction.user.id, job.company, job.title);
-
-    const embed = buildJobEmbed(interaction.member ?? interaction.user, job);
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel("🎲 Reroll Used")
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true)
-    );
-
-    try {
-      await interaction.update({ embeds: [embed], components: [row] });
-    } catch {
-      await interaction.reply({ embeds: [embed], components: [row] });
-    }
-  }
-}
-
-
-// ---------------------- BUTTON HANDLER --------------------
-
-export async function onInteractionCreate(interaction) {
-  if (!interaction.isButton()) return;
-  const parsed = parseId(interaction.customId);
-  if (!parsed) return;
-
-  if (parsed.kind === "reroll") {
-    const cd = coolDownCheck(rerollCooldown, interaction.user.id, REROLL_COOLDOWN_S);
-    if (cd > 0)
-      return void interaction.reply({
-        content: `🕓 You already rerolled recently — wait ${cd}s.`,
-        ephemeral: true,
-      });
-
-    const current = await getUserJob(interaction.user.id);
-    if (current) {
-      const { company, title } = JSON.parse(current);
-      await redis.del(`job:slots:${company}:${title}`);
-    }
-
-    const job = await generateJob(interaction.user.id);
-    if (!job)
-      return void interaction.reply({
-        content: `😔 All positions are filled right now!`,
-        ephemeral: true,
-      });
 
     await assignJob(interaction.user.id, job.company, job.title);
 
