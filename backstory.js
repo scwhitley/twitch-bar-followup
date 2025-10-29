@@ -63,7 +63,6 @@ export function generateBackstory({ userId, gender = Gender.UNKNOWN, overrideSee
   const age = 18 + Math.floor(rng() * 22); // 18–39
 
   // lightweight prose with pronoun tokens
-  const p = pronounsFor(gender);
   let prose = [
   `${p.They} ${wasWere} raised on ${origin.planet}, in ${originPlace}, where deals are inked in shadows and paid in favors.`,
   `Known for being ${personality}, ${p.they} learned early that silence travels faster than rumor.`,
