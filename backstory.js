@@ -1,5 +1,6 @@
 import { Gender } from "./gender.js";
 import { makeRng, seedFrom, pick } from "./rng.js";
+import { ORIGINS } from "./origins.js";
 import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
 import { applyPronouns, pronounsFor } from "./pronouns.js";
 
