@@ -2,6 +2,7 @@
 import { EmbedBuilder } from "discord.js";
 import { Redis } from "@upstash/redis";
 import { addBalance, subBalance } from "./econ-core.js";
+import { PermissionsBitField } from "discord.js";
 
 const redis = Redis.fromEnv();
 
@@ -57,6 +58,8 @@ function basePayForRole(title = "") {
 
 const WORK_COOLDOWN_S = 45;
 
+const ADMIN_BYPASS = process.env.ADMIN_BYPASS_WORK === "1"; // set to "1" in Render to enable
+
 /** ============================================================================
  *  REDIS KEYS
  * ========================================================================== */
@@ -82,12 +85,14 @@ function channelMatches(meta, channel) {
   const arr = Array.isArray(meta.channels) ? meta.channels : [meta.channels];
   return arr.some((id) => String(id) === String(channel?.id));
 }
-function checkChannelOk(company, channel) {
+function checkChannelOk(company, channel, member) {
+  if (ADMIN_BYPASS && isAdmin(member)) return true;  // admin override
   if (!ENFORCE) return true;
   const meta = VENDOR_ALIASES[company];
   if (!meta) return true;
   return channelMatches(meta, channel);
 }
+
 
 async function getShift(userId) {
   const data = await redis.get(SHIFT_KEY(userId));
@@ -208,7 +213,7 @@ export async function onMessageCreate(msg) {
     const job = await getUserJob(msg.author.id);
     if (!job) return msg.reply("You don't have a job yet. Use `!job` to get assigned first.");
 
-    if (!checkChannelOk(job.company, msg.channel)) {
+    if (!checkChannelOk(job.company, msg.channel, msg.member)) {
       return msg.reply("You need to clock in from your workplace channel.");
     }
 
@@ -250,7 +255,7 @@ export async function onMessageCreate(msg) {
     const shift = await getShift(msg.author.id);
     if (!shift) return msg.reply("You're not clocked in. Use `!clockin` first.");
 
-    if (!checkChannelOk(shift.company, msg.channel)) {
+    if (!checkChannelOk(shift.company, msg.channel, msg.member)) {
       return msg.reply("You need to work from your workplace channel.");
     }
 
