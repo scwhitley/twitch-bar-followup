@@ -6,6 +6,7 @@ import crypto from "crypto";
 import 'dotenv/config';
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { onMessageCreate, onInteractionCreate } from "./backstory-command.js";
+import { onMessageCreate as onFleetChargeMsg } from "./economy/fleet-charge.js";
 import fs from "fs";
 import axios from "axios"
 import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
@@ -74,6 +75,8 @@ client.on("messageCreate", (msg) => {
   onJobMessage(msg);    // 👈 add this line
 });
 
+
+
 client.on("interactionCreate", (int) => {
   onInteractionCreate(int); // existing
   onJobInteraction(int);    // 👈 add this line
@@ -89,7 +92,12 @@ client.on("messageCreate", (msg) => {
   onBankMsg(msg);
   onInventoryMsg(msg);
   onPantryMsg(msg);
-  onAdminEconMsg(msg); // 👈 admin money commands
+  onAdminEconMsg(msg);
+  onWorkMsg(msg);
+  onVeilMsg(msg);
+  onFleetMsg(msg);
+  onRealityMsg(msg);
+  onFleetChargeMsg(msg); // 🔋 charge system
 });
 
 // ---------- Award log (shared) ----------
