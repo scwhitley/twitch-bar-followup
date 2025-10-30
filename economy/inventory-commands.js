@@ -1,6 +1,7 @@
 import { listInventory } from "./econ-core.js";
 import { EmbedBuilder } from "discord.js";
 
+
 export async function onMessageCreate(msg) {
   if (msg.author.bot) return;
   if (!msg.content.startsWith("!inventory")) return;
