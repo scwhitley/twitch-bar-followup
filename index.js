@@ -40,7 +40,7 @@ import { onMessageCreate as onFleetMsg } from "./economy/vendor-fleet.js";     /
 import { onMessageCreate as onRealityMsg } from "./economy/vendor-reality.js"; // Distorted Crimson Reality
 
 // ---------- Work / Shift System ----------
-import { onMessageCreate as onWorkMsg } from "./economy/work-command.js";      // Handles !clockin, !work, !clockout
+import { onMessageCreate as onWorkMsg } from "./economy/work-commands.js";      // Handles !clockin, !work, !clockout
 
 // ---------- Fleet / EV Charge ----------
 import { onMessageCreate as onFleetChargeMsg } from "./economy/fleet-charge.js"; // Handles !drive, !charge, !carcharge
