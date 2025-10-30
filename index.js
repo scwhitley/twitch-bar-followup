@@ -21,6 +21,8 @@ import {
   onMessageCreate as onJobMessage,
   onInteractionCreate as onJobInteraction,
 } from "./job-command.js";
+import { onMessageCreate as onAdminEconMsg } from "./economy/admin-commands.js";
+
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
@@ -87,6 +89,7 @@ client.on("messageCreate", (msg) => {
   onBankMsg(msg);
   onInventoryMsg(msg);
   onPantryMsg(msg);
+  onAdminEconMsg(msg); // 👈 admin money commands
 });
 
 // ---------- Award log (shared) ----------
