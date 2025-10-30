@@ -1,45 +1,42 @@
 // economy/work-commands.js
 import { EmbedBuilder } from "discord.js";
 import { Redis } from "@upstash/redis";
-import { getBalance, addBalance, subBalance } from "./econ-core.js";
+import { addBalance, subBalance } from "./econ-core.js";
 
 const redis = Redis.fromEnv();
 
 /** ============================================================================
  *  CONFIG
- *  - ENFORCE_WORK_CHANNELS=1 to force clockin/work/clockout to happen in the
- *    correct channel(s) per vendor (company).
- *  - You can bind by channel NAME or ID. See VENDOR_ALIASES below.
+ *  Set ENFORCE_WORK_CHANNELS=1 in your Render env to force the correct channels.
  * ========================================================================== */
 
-// Turn on to enforce channels
 const ENFORCE = process.env.ENFORCE_WORK_CHANNELS === "1";
 
-// Company → vendor alias + allowed channels (name or ID, or array of either)
+// Company → vendor alias + allowed channels (IDs preferred)
 const VENDOR_ALIASES = {
   "Crimson Pantry": {
     alias: "pantry",
-    channels: ["crimson-pantry"], // e.g., ["123456789012345678", "crimson-pantry"]
+    channels: ["1427357566735880203"],
   },
   "Distorted Fleet Exports": {
     alias: "fleet",
-    channels: ["distorted-fleet-exports"],
+    channels: ["1427357852804055160"],
   },
   "Stirred Vile": {
     alias: "vile",
-    channels: ["stirred-vile"],
+    channels: ["1427357990394007592"], // #the-stirred-veil
   },
   "Distorted Realm Reserve": {
     alias: "bank",
-    channels: ["distorted-realm-reserve"],
+    channels: ["1427358385581588657"],
   },
   "Distorted Casino": {
     alias: "casino",
-    channels: ["distorted-casino"],
+    channels: ["1427358631610814484"],
   },
   "Distorted Crimson Reality": {
     alias: "reality",
-    channels: ["distorted-crimson-reality"],
+    channels: ["1428520971010048051"],
   },
 };
 
@@ -48,7 +45,6 @@ function basePayForRole(title = "") {
   const t = title.toLowerCase();
   if (t.includes("hr manager")) return 750;
   if (t.includes("manager")) return 1000; // Sales/Bar/Pit/Branch/etc Manager
-  // associate-tier keywords
   if (
     t.includes("associate") ||
     t.includes("teller") ||
@@ -59,17 +55,16 @@ function basePayForRole(title = "") {
   return 500;
 }
 
-// Cooldown between !work tasks
 const WORK_COOLDOWN_S = 45;
 
 /** ============================================================================
  *  REDIS KEYS
  * ========================================================================== */
 
-const JOB_ASSIGNED = (uid) => `job:assigned:${uid}`;   // set by job-command.js
-const SHIFT_KEY    = (uid) => `work:shift:${uid}`;     // JSON: { company, title, vendor, startedAt, events }
-const SHIFT_DELTA  = (uid) => `work:shift:delta:${uid}`; // int: cumulative delta this shift
-const WORK_CD      = (uid) => `work:cd:${uid}`;        // cooldown ts seconds
+const JOB_ASSIGNED = (uid) => `job:assigned:${uid}`;
+const SHIFT_KEY    = (uid) => `work:shift:${uid}`;         // { company, title, vendor, startedAt, events }
+const SHIFT_DELTA  = (uid) => `work:shift:delta:${uid}`;   // int
+const WORK_CD      = (uid) => `work:cd:${uid}`;            // ts seconds
 
 /** ============================================================================
  *  HELPERS
@@ -79,27 +74,18 @@ async function getUserJob(userId) {
   const rec = await redis.get(JOB_ASSIGNED(userId));
   return rec ? (typeof rec === "string" ? JSON.parse(rec) : rec) : null;
 }
-
 function companyToVendor(company) {
   return VENDOR_ALIASES[company]?.alias ?? null;
 }
-
 function channelMatches(meta, channel) {
   if (!meta?.channels || !meta.channels.length) return true;
   const arr = Array.isArray(meta.channels) ? meta.channels : [meta.channels];
-
-  const byId = arr.some((x) => /^\d{16,20}$/.test(String(x)));
-  if (byId) return arr.some((id) => String(id) === String(channel?.id));
-
-  // name compare (lowercased)
-  const name = channel?.name?.toLowerCase();
-  return arr.some((n) => String(n).toLowerCase() === name);
+  return arr.some((id) => String(id) === String(channel?.id));
 }
-
 function checkChannelOk(company, channel) {
   if (!ENFORCE) return true;
   const meta = VENDOR_ALIASES[company];
-  if (!meta) return true; // unknown mapping => allow
+  if (!meta) return true;
   return channelMatches(meta, channel);
 }
 
@@ -114,14 +100,12 @@ async function clearShift(userId) {
   await redis.del(SHIFT_KEY(userId));
   await redis.del(SHIFT_DELTA(userId));
 }
-
 async function addShiftDelta(userId, delta) {
   await redis.incrby(SHIFT_DELTA(userId), delta);
 }
 async function getShiftDelta(userId) {
   return parseInt(await redis.get(SHIFT_DELTA(userId))) || 0;
 }
-
 async function checkCooldown(userId) {
   const now = Math.floor(Date.now() / 1000);
   const until = parseInt(await redis.get(WORK_CD(userId))) || 0;
@@ -133,8 +117,6 @@ async function checkCooldown(userId) {
 
 /** ============================================================================
  *  EVENTS (per vendor)
- *  Each entry: { text, delta }
- *  Positive delta adds DD; negative subtracts DD (clamped at 0 wallet).
  * ========================================================================== */
 
 const EVENTS = {
@@ -159,7 +141,7 @@ const EVENTS = {
     { text: "Customer ghosted after 3 hours of negotiation. Pain.", delta: -30 },
     { text: "Social post brought in a hot lead—bonus payout.", delta: +60 },
     { text: "Scratched a demo car with a key fob—oops.", delta: -120 },
-    { text: "You negotiated like a Sith lord. Management slips you a bonus.", delta: +100 },
+    { text: "Negotiated like a Sith lord. Management slips you a bonus.", delta: +100 },
     { text: "Left the headlights on overnight—dead battery fee.", delta: -35 },
   ],
   vile: [
@@ -235,7 +217,6 @@ export async function onMessageCreate(msg) {
       return msg.reply(`You're already clocked in at **${existing.company}** as **${existing.title}**.`);
     }
 
-    // Optional explicit alias check
     const userAlias = parts[1]?.toLowerCase();
     const expectedAlias = companyToVendor(job.company);
     if (userAlias && expectedAlias && userAlias !== expectedAlias) {
@@ -284,7 +265,6 @@ export async function onMessageCreate(msg) {
       return msg.reply(`⏳ Take a breath—next task in **${cdLeft}s**.`);
     }
 
-    // pick random event & apply
     const event = table[Math.floor(Math.random() * table.length)];
     let deltaApplied = 0;
 
@@ -298,7 +278,7 @@ export async function onMessageCreate(msg) {
           await subBalance(msg.author.id, abs);
           deltaApplied = event.delta;
         } catch {
-          deltaApplied = 0; // couldn't cover negative; narrate but don't go below 0
+          deltaApplied = 0; // can't go below 0
         }
       }
       await addShiftDelta(msg.author.id, deltaApplied);
