@@ -3,26 +3,48 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
-import 'dotenv/config';
+import "dotenv/config";
 import { Client, GatewayIntentBits, Partials } from "discord.js";
-import { onMessageCreate, onInteractionCreate } from "./backstory-command.js";
-import { onMessageCreate as onFleetChargeMsg } from "./economy/fleet-charge.js";
 import fs from "fs";
-import axios from "axios"
+import axios from "axios";
+import { fetch as undiciFetch } from "undici";
+import { Redis } from "@upstash/redis";
+
+// ---------- Core / Shared ----------
 import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
-import { fetch as undiciFetch } from "undici";
+import { LOVE_TIERS } from "./love-tiers.js";
 import { DUEL_ROASTS, RALLY_LINES, BAR_EVENTS, INVASION_STARTS } from "./faction-text.js";
-import { Redis } from "@upstash/redis";
-import { LOVE_TIERS } from "./love-tiers.js"; 
-import { onMessageCreate as onBankMsg } from "./economy/bank-commands.js";
-import { onMessageCreate as onInventoryMsg } from "./economy/inventory-commands.js";
-import { onMessageCreate as onPantryMsg } from "./economy/vendor-pantry.js";
+
+// ---------- Backstory ----------
 import {
-  onMessageCreate as onJobMessage,
+  onMessageCreate as onBackstoryMsg,
+  onInteractionCreate as onBackstoryInteraction,
+} from "./backstory-command.js";
+
+// ---------- Jobs ----------
+import {
+  onMessageCreate as onJobMsg,
   onInteractionCreate as onJobInteraction,
 } from "./job-command.js";
+
+// ---------- Economy Core ----------
+import { onMessageCreate as onBankMsg } from "./economy/bank-commands.js";
+import { onMessageCreate as onInventoryMsg } from "./economy/inventory-commands.js";
 import { onMessageCreate as onAdminEconMsg } from "./economy/admin-commands.js";
+
+// ---------- Vendors ----------
+import { onMessageCreate as onPantryMsg } from "./economy/vendor-pantry.js";   // Crimson Pantry
+import { onMessageCreate as onBarMsg } from "./economy/vendor-bar.js";         // Stirred Veil Bar
+import { onMessageCreate as onFleetMsg } from "./economy/vendor-fleet.js";     // Distorted Fleet Exports
+import { onMessageCreate as onRealityMsg } from "./economy/vendor-reality.js"; // Distorted Crimson Reality
+
+// ---------- Work / Shift System ----------
+import { onMessageCreate as onWorkMsg } from "./economy/work-command.js";      // Handles !clockin, !work, !clockout
+
+// ---------- Fleet / EV Charge ----------
+import { onMessageCreate as onFleetChargeMsg } from "./economy/fleet-charge.js"; // Handles !drive, !charge, !carcharge
+
 
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
