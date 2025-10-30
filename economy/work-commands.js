@@ -42,6 +42,7 @@ const VENDOR_ALIASES = {
   "Distorted Fleet Charge": {
   alias: "charge",
   channels: ["1433493619192500275"], // or your channel ID if enforcing
+  },
 };
 
 // Base payroll per shift by role title
