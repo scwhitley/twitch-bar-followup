@@ -1,11 +1,7 @@
-import {
-  getBalance,
-  subBalance,
-  addItem,
-  listInventory,
-} from "./econ-core.js";
+import { getBalance, subBalance, addItem, listInventory } from "./econ-core.js";
 import { PANTRY_ITEMS } from "./catalog-pantry.js";
 import { EmbedBuilder } from "discord.js";
+
 
 export async function onMessageCreate(msg) {
   if (msg.author.bot) return;
