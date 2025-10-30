@@ -89,6 +89,37 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
+// --- Unified dispatcher: route every message to each handler safely ---
+client.on("messageCreate", async (msg) => {
+  // IMPORTANT: don't let one handler crash the rest
+  const run = async (fn) => {
+    try { await fn?.(msg); } catch (e) { console.error("[handler error]", fn?.name, e); }
+  };
+
+  await run(onBackstoryMsg);
+  await run(onJobMsg);
+  await run(onWorkMsg);
+  await run(onPantryMsg);
+  await run(onBarMsg);
+  await run(onFleetMsg);
+  await run(onRealityMsg);
+  await run(onBankMsg);
+  await run(onInventoryMsg);
+  await run(onAdminEconMsg);
+  await run(onFleetChargeMsg);
+});
+
+client.on("interactionCreate", async (interaction) => {
+  const runI = async (fn) => {
+    try { await fn?.(interaction); } catch (e) { console.error("[interaction error]", fn?.name, e); }
+  };
+
+  await runI(onBackstoryInteraction);
+  await runI(onJobInteraction);
+});
+
+
+
 client.on("ready", () => console.log(`Logged in as ${client.user.tag}`));
 client.on("messageCreate", onMessageCreate);
 client.on("interactionCreate", onInteractionCreate);
