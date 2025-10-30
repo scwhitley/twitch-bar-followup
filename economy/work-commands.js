@@ -39,6 +39,9 @@ const VENDOR_ALIASES = {
     alias: "reality",
     channels: ["1428520971010048051"],
   },
+  "Distorted Fleet Charge": {
+  alias: "charge",
+  channels: ["1433493619192500275"], // or your channel ID if enforcing
 };
 
 // Base payroll per shift by role title
@@ -197,6 +200,19 @@ const EVENTS = {
     { text: "Client testimonial goes viral. Referral bonus.", delta: +65 },
     { text: "Double-booked a showing. Awkward shuffles ensued.", delta: -18 },
   ],
+  charge: [
+    { text: "Calibrated dock arms and sped up a slow queue. Efficiency bonus.", delta: +25 },
+    { text: "Mis-scanned a plate; comped a session.", delta: -20 },
+    { text: "Upsold a fast-charge boost pack.", delta: +35 },
+    { text: "Left a bay blocked after a test—small penalty.", delta: -15 },
+    { text: "Guided a tourist through the app mess. Tip received.", delta: +18 },
+    { text: "Replaced a frayed cable jacket.", delta: -10 },
+    { text: "Handled a surge hour without delays.", delta: +28 },
+    { text: "Printer jam ate five receipts.", delta: -8 },
+    { text: "Cleaned bays and cleared cones like a pro.", delta: +12 },
+    { text: "Wrong rate applied—refund processed.", delta: -14 },
+],
+
 };
 
 /** ============================================================================
