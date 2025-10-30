@@ -59,7 +59,7 @@ function basePayForRole(title = "") {
 const WORK_COOLDOWN_S = 45;
 
 const ADMIN_BYPASS = process.env.ADMIN_BYPASS_WORK === "1"; // set to "1" in Render to enable
-
+const isAdmin = (m) => !!m?.permissions?.has(PermissionsBitField.Flags.Administrator);
 /** ============================================================================
  *  REDIS KEYS
  * ========================================================================== */
@@ -208,126 +208,140 @@ export async function onMessageCreate(msg) {
   const parts = msg.content.trim().split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
 
-  // --------- !clockin [vendorAlias]
-  if (cmd === "!clockin") {
-    const job = await getUserJob(msg.author.id);
-    if (!job) return msg.reply("You don't have a job yet. Use `!job` to get assigned first.");
+  // --------- !clockin [vendorAlias] ---------
+ // --------- !clockin [vendorAlias]
+if (cmd === "!clockin") {
+  let job = await getUserJob(msg.author.id);
+  const userAlias = parts[1]?.toLowerCase();
 
-    if (!checkChannelOk(job.company, msg.channel, msg.member)) {
-      return msg.reply("You need to clock in from your workplace channel.");
-    }
-
-    const existing = await getShift(msg.author.id);
-    if (existing) {
-      return msg.reply(`You're already clocked in at **${existing.company}** as **${existing.title}**.`);
-    }
-
-    const userAlias = parts[1]?.toLowerCase();
-    const expectedAlias = companyToVendor(job.company);
-    if (userAlias && expectedAlias && userAlias !== expectedAlias) {
-      return msg.reply(`That vendor doesn't match your job. You work at **${job.company}**.`);
-    }
-
-    const shift = {
-      company: job.company,
-      title: job.title,
-      vendor: expectedAlias,
-      startedAt: Date.now(),
-      events: 0,
-    };
-    await setShift(msg.author.id, shift);
-    await addShiftDelta(msg.author.id, 0);
-
-    const basePay = basePayForRole(job.title);
-    const e = new EmbedBuilder()
-      .setTitle("🕒 Shift Started")
-      .setDescription(
-        `Clocked in at **${job.company}** as **${job.title}**.\n` +
-        `Base shift pay on clockout: **${basePay} DD**.\n` +
-        `Run **!work** to handle tasks/events and stack bonuses (or penalties).`
-      )
-      .setColor("Green");
-    return msg.channel.send({ embeds: [e] });
+  // Admins can clock in without a job if ADMIN_BYPASS=1 and they provide an alias
+  if (!job && ADMIN_BYPASS && isAdmin(msg.member) && userAlias) {
+    const entry = Object.entries(VENDOR_ALIASES).find(([, v]) => v.alias === userAlias);
+    if (!entry) return msg.reply("Unknown vendor alias. Try one of: pantry, fleet, vile, bank, casino, reality.");
+    const [company] = entry;
+    job = { company, title: "Admin Temp Shift" };
   }
 
-  // --------- !work
-  if (cmd === "!work") {
-    const shift = await getShift(msg.author.id);
-    if (!shift) return msg.reply("You're not clocked in. Use `!clockin` first.");
+  if (!job) return msg.reply("You don't have a job yet. Use `!job` to get assigned first.");
 
-    if (!checkChannelOk(shift.company, msg.channel, msg.member)) {
-      return msg.reply("You need to work from your workplace channel.");
-    }
+  if (!checkChannelOk(job.company, msg.channel, msg.member)) {
+    return msg.reply("You need to clock in from your workplace channel.");
+  }
 
-    const vendor = companyToVendor(shift.company) || shift.vendor || "pantry";
-    const table = EVENTS[vendor];
-    if (!table || !table.length) {
-      return msg.reply("This workplace doesn't have tasks yet. Ping the admin to add events.");
-    }
+  const existing = await getShift(msg.author.id);
+  if (existing) {
+    return msg.reply(`You're already clocked in at **${existing.company}** as **${existing.title}**.`);
+  }
 
-    const cdLeft = await checkCooldown(msg.author.id);
-    if (cdLeft > 0) {
-      return msg.reply(`⏳ Take a breath—next task in **${cdLeft}s**.`);
-    }
+  const expectedAlias = companyToVendor(job.company);
+  if (
+    userAlias && expectedAlias && userAlias !== expectedAlias &&
+    !(ADMIN_BYPASS && isAdmin(msg.member))
+  ) {
+    return msg.reply(`That vendor doesn't match your job. You work at **${job.company}**.`);
+  }
 
-    const event = table[Math.floor(Math.random() * table.length)];
-    let deltaApplied = 0;
+  const shift = {
+    company: job.company,
+    title: job.title,
+    vendor: expectedAlias || userAlias || null,
+    startedAt: Date.now(),
+    events: 0,
+  };
+  await setShift(msg.author.id, shift);
+  await addShiftDelta(msg.author.id, 0);
 
-    try {
-      if (event.delta > 0) {
-        await addBalance(msg.author.id, event.delta);
+  const basePay = basePayForRole(job.title);
+  const e = new EmbedBuilder()
+    .setTitle("🕒 Shift Started")
+    .setDescription(
+      `Clocked in at **${job.company}** as **${job.title}**.\n` +
+      `Base shift pay on clockout: **${basePay} DD**.\n` +
+      `Run **!work** to handle tasks/events and stack bonuses (or penalties).`
+    )
+    .setColor("Green");
+  return msg.channel.send({ embeds: [e] });
+}
+
+// --------- !work
+if (cmd === "!work") {
+  const shift = await getShift(msg.author.id);
+  if (!shift) return msg.reply("You're not clocked in. Use `!clockin` first.");
+
+  if (!checkChannelOk(shift.company, msg.channel, msg.member)) {
+    return msg.reply("You need to work from your workplace channel.");
+  }
+
+  const vendor = companyToVendor(shift.company) || shift.vendor || "pantry";
+  const table = EVENTS[vendor];
+  if (!table || !table.length) {
+    return msg.reply("This workplace doesn't have tasks yet. Ping the admin to add events.");
+  }
+
+  // Admins can skip cooldown if ADMIN_BYPASS=1
+  const cdLeft = (ADMIN_BYPASS && isAdmin(msg.member)) ? 0 : await checkCooldown(msg.author.id);
+  if (cdLeft > 0) {
+    return msg.reply(`⏳ Take a breath—next task in **${cdLeft}s**.`);
+  }
+
+  const event = table[Math.floor(Math.random() * table.length)];
+  let deltaApplied = 0;
+
+  try {
+    if (event.delta > 0) {
+      await addBalance(msg.author.id, event.delta);
+      deltaApplied = event.delta;
+    } else if (event.delta < 0) {
+      const abs = Math.abs(event.delta);
+      try {
+        await subBalance(msg.author.id, abs);
         deltaApplied = event.delta;
-      } else if (event.delta < 0) {
-        const abs = Math.abs(event.delta);
-        try {
-          await subBalance(msg.author.id, abs);
-          deltaApplied = event.delta;
-        } catch {
-          deltaApplied = 0; // can't go below 0
-        }
+      } catch {
+        // couldn't cover negative; narrate but don't go below 0
+        deltaApplied = 0;
       }
-      await addShiftDelta(msg.author.id, deltaApplied);
-      const updated = { ...shift, events: (shift.events || 0) + 1 };
-      await setShift(msg.author.id, updated);
-    } catch {
-      return msg.reply("Task failed to process—try again in a moment.");
     }
-
-    const sign = deltaApplied >= 0 ? "+" : "−";
-    const e = new EmbedBuilder()
-      .setTitle("🧰 Task Completed")
-      .setDescription(`${event.text}`)
-      .addFields({ name: "Shift delta", value: `${sign}${Math.abs(deltaApplied)} DD`, inline: true })
-      .setColor(deltaApplied >= 0 ? "Green" : "Orange");
-    return msg.channel.send({ embeds: [e] });
+    await addShiftDelta(msg.author.id, deltaApplied);
+    const updated = { ...shift, events: (shift.events || 0) + 1 };
+    await setShift(msg.author.id, updated);
+  } catch {
+    return msg.reply("Task failed to process—try again in a moment.");
   }
 
-  // --------- !clockout
-  if (cmd === "!clockout") {
-    const shift = await getShift(msg.author.id);
-    if (!shift) return msg.reply("You're not clocked in.");
+  const sign = deltaApplied >= 0 ? "+" : "−";
+  const e = new EmbedBuilder()
+    .setTitle("🧰 Task Completed")
+    .setDescription(`${event.text}`)
+    .addFields({ name: "Shift delta", value: `${sign}${Math.abs(deltaApplied)} DD`, inline: true })
+    .setColor(deltaApplied >= 0 ? "Green" : "Orange");
+  return msg.channel.send({ embeds: [e] });
+}
 
-    if (!checkChannelOk(shift.company, msg.channel)) {
-      return msg.reply("Clock out from your workplace channel.");
-    }
+// --------- !clockout
+if (cmd === "!clockout") {
+  const shift = await getShift(msg.author.id);
+  if (!shift) return msg.reply("You're not clocked in.");
 
-    const base = basePayForRole(shift.title);
-    const delta = await getShiftDelta(msg.author.id);
-    const total = base + delta;
-
-    if (total > 0) await addBalance(msg.author.id, total);
-    await clearShift(msg.author.id);
-
-    const summary = new EmbedBuilder()
-      .setTitle("🧾 Shift Summary")
-      .setDescription(
-        `**${shift.company}** — **${shift.title}**\n` +
-        `Tasks completed: **${shift.events || 0}**\n` +
-        `Base pay: **${base} DD**\n` +
-        `Task delta: **${delta >= 0 ? "+" : "−"}${Math.abs(delta)} DD**\n` +
-        `**Paid:** ${total} DD`
-      )
-      .setColor("Blue");
-    return msg.channel.send({ embeds: [summary] });
+  if (!checkChannelOk(shift.company, msg.channel, msg.member)) {
+    return msg.reply("Clock out from your workplace channel.");
   }
+
+  const base = basePayForRole(shift.title);
+  const delta = await getShiftDelta(msg.author.id);
+  const total = base + delta;
+
+  if (total > 0) await addBalance(msg.author.id, total);
+  await clearShift(msg.author.id);
+
+  const summary = new EmbedBuilder()
+    .setTitle("🧾 Shift Summary")
+    .setDescription(
+      `**${shift.company}** — **${shift.title}**\n` +
+      `Tasks completed: **${shift.events || 0}**\n` +
+      `Base pay: **${base} DD**\n` +
+      `Task delta: **${delta >= 0 ? "+" : "−"}${Math.abs(delta)} DD**\n` +
+      `**Paid:** ${total} DD`
+    )
+    .setColor("Blue");
+  return msg.channel.send({ embeds: [summary] });
 }
