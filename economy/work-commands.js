@@ -361,4 +361,5 @@ if (cmd === "!clockout") {
     )
     .setColor("Blue");
   return msg.channel.send({ embeds: [summary] });
+  }
 }
