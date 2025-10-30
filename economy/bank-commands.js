@@ -1,6 +1,7 @@
 import { deposit, withdraw, getBalance, getBank } from "./econ-core.js";
 import { EmbedBuilder } from "discord.js";
 
+
 export async function onMessageCreate(msg) {
   if (msg.author.bot) return;
   const [cmd, arg] = msg.content.trim().split(/\s+/);
