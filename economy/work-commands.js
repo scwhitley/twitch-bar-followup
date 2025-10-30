@@ -1,54 +1,79 @@
 // economy/work-commands.js
-import { EmbedBuilder, PermissionsBitField } from "discord.js";
+import { EmbedBuilder } from "discord.js";
 import { Redis } from "@upstash/redis";
 import { getBalance, addBalance, subBalance } from "./econ-core.js";
 
 const redis = Redis.fromEnv();
 
-/** CONFIG *******************************************************************/
+/** ============================================================================
+ *  CONFIG
+ *  - ENFORCE_WORK_CHANNELS=1 to force clockin/work/clockout to happen in the
+ *    correct channel(s) per vendor (company).
+ *  - You can bind by channel NAME or ID. See VENDOR_ALIASES below.
+ * ========================================================================== */
 
-// Optional: enforce that !clockin / !work / !clockout must be used in the correct channel.
-// Set ENFORCE_WORK_CHANNELS=1 in Render to enable.
+// Turn on to enforce channels
 const ENFORCE = process.env.ENFORCE_WORK_CHANNELS === "1";
 
-// Map job "company" names (from job-command.js) to a short vendor alias and (optionally) a channel name.
+// Company → vendor alias + allowed channels (name or ID, or array of either)
 const VENDOR_ALIASES = {
-  "Crimson Pantry": { alias: "pantry", channel: "crimson-pantry" },
-  "Distorted Fleet Exports": { alias: "fleet", channel: "distorted-fleet-exports" },
-  "Stirred Vile": { alias: "vile", channel: "stirred-vile" },
-  "Distorted Realm Reserve": { alias: "bank", channel: "distorted-realm-reserve" },
-  "Distorted Casino": { alias: "casino", channel: "distorted-casino" },
-  "Distorted Crimson Reality": { alias: "reality", channel: "distorted-crimson-reality" },
+  "Crimson Pantry": {
+    alias: "pantry",
+    channels: ["crimson-pantry"], // e.g., ["123456789012345678", "crimson-pantry"]
+  },
+  "Distorted Fleet Exports": {
+    alias: "fleet",
+    channels: ["distorted-fleet-exports"],
+  },
+  "Stirred Vile": {
+    alias: "vile",
+    channels: ["stirred-vile"],
+  },
+  "Distorted Realm Reserve": {
+    alias: "bank",
+    channels: ["distorted-realm-reserve"],
+  },
+  "Distorted Casino": {
+    alias: "casino",
+    channels: ["distorted-casino"],
+  },
+  "Distorted Crimson Reality": {
+    alias: "reality",
+    channels: ["distorted-crimson-reality"],
+  },
 };
 
-// Role → base pay rules
+// Base payroll per shift by role title
 function basePayForRole(title = "") {
   const t = title.toLowerCase();
   if (t.includes("hr manager")) return 750;
-  if (t.includes("manager")) return 1000; // Sales Manager, Bar Manager, Pit Manager, Branch Manager, etc.
-  // associate tier keywords
+  if (t.includes("manager")) return 1000; // Sales/Bar/Pit/Branch/etc Manager
+  // associate-tier keywords
   if (
     t.includes("associate") ||
     t.includes("teller") ||
     t.includes("dealer") ||
     t.includes("bartender") ||
-    t.includes("realtor") // treat "Lead Realtor" as associate tier unless you want a special rate
+    t.includes("realtor")
   ) return 500;
-  // default to associate tier if unknown
   return 500;
 }
 
-// Work cooldown (seconds) to prevent spam
+// Cooldown between !work tasks
 const WORK_COOLDOWN_S = 45;
 
-/** PERSISTENCE KEYS **********************************************************/
+/** ============================================================================
+ *  REDIS KEYS
+ * ========================================================================== */
 
-const JOB_ASSIGNED = (uid) => `job:assigned:${uid}`;            // from job-command.js
-const SHIFT_KEY    = (uid) => `work:shift:${uid}`;              // JSON: { company, title, vendor, startedAt, events }
-const SHIFT_DELTA  = (uid) => `work:shift:delta:${uid}`;        // integer: net delta from !work events this shift
-const WORK_CD      = (uid) => `work:cd:${uid}`;                 // cooldown stamp (ts seconds)
+const JOB_ASSIGNED = (uid) => `job:assigned:${uid}`;   // set by job-command.js
+const SHIFT_KEY    = (uid) => `work:shift:${uid}`;     // JSON: { company, title, vendor, startedAt, events }
+const SHIFT_DELTA  = (uid) => `work:shift:delta:${uid}`; // int: cumulative delta this shift
+const WORK_CD      = (uid) => `work:cd:${uid}`;        // cooldown ts seconds
 
-/** HELPERS *******************************************************************/
+/** ============================================================================
+ *  HELPERS
+ * ========================================================================== */
 
 async function getUserJob(userId) {
   const rec = await redis.get(JOB_ASSIGNED(userId));
@@ -56,14 +81,26 @@ async function getUserJob(userId) {
 }
 
 function companyToVendor(company) {
-  return VENDOR_ALIASES[company] ? VENDOR_ALIASES[company].alias : null;
+  return VENDOR_ALIASES[company]?.alias ?? null;
+}
+
+function channelMatches(meta, channel) {
+  if (!meta?.channels || !meta.channels.length) return true;
+  const arr = Array.isArray(meta.channels) ? meta.channels : [meta.channels];
+
+  const byId = arr.some((x) => /^\d{16,20}$/.test(String(x)));
+  if (byId) return arr.some((id) => String(id) === String(channel?.id));
+
+  // name compare (lowercased)
+  const name = channel?.name?.toLowerCase();
+  return arr.some((n) => String(n).toLowerCase() === name);
 }
 
 function checkChannelOk(company, channel) {
   if (!ENFORCE) return true;
   const meta = VENDOR_ALIASES[company];
-  if (!meta?.channel) return true; // no binding set, allow
-  return channel?.name?.toLowerCase() === meta.channel.toLowerCase();
+  if (!meta) return true; // unknown mapping => allow
+  return channelMatches(meta, channel);
 }
 
 async function getShift(userId) {
@@ -94,30 +131,90 @@ async function checkCooldown(userId) {
   return 0;
 }
 
-/** EVENTS ********************************************************************/
-/**
- * Event tables per vendor alias.
- * Each event => { text, delta } where delta applies immediately to wallet + shift delta.
- * Start with CRIMSON PANTRY; we’ll add more vendors later.
- */
+/** ============================================================================
+ *  EVENTS (per vendor)
+ *  Each entry: { text, delta }
+ *  Positive delta adds DD; negative subtracts DD (clamped at 0 wallet).
+ * ========================================================================== */
 
 const EVENTS = {
   pantry: [
-    { text: "You upsold a premium olive oil to a foodie. Commission hits nice.", delta: +45 },
-    { text: "Price tag misprint—had to honor it. Ouch.", delta: -20 },
-    { text: "Helped restock the freezer faster than a speedrun. Boss is impressed.", delta: +25 },
-    { text: "Knocked over a pyramid of soup cans. Dramatic. Loud. Costly.", delta: -30 },
+    { text: "Upsold premium olive oil to a foodie—commission secured.", delta: +45 },
+    { text: "Price tag misprint—had to honor the discount.", delta: -20 },
+    { text: "Restocked freezer like a speedrunner. Boss noticed.", delta: +25 },
+    { text: "Soup-can pyramid collapse. Spectacular. Costly.", delta: -30 },
     { text: "Prevented a cart collision with elite footwork. Hero bonus.", delta: +15 },
-    { text: "Gave a regular an extra coupon by mistake.", delta: -10 },
-    { text: "Holiday rush mastery: moved the line like a conductor. Tips!", delta: +35 },
-    { text: "Left the deli scale on tare. Chaos ensued.", delta: -18 },
-    { text: "Found a lost kid and reunited them. Parent tipped you.", delta: +20 },
-    { text: "Free sample frenzy — gave out the entire tray to one goblin. Manager facepalmed.", delta: -12 },
+    { text: "Double-scanned an item. Had to refund.", delta: -12 },
+    { text: "Holiday rush mastery—kept the line moving. Tips rolled in.", delta: +35 },
+    { text: "Forgot to rotate stock—expired yogurt discovered.", delta: -18 },
+    { text: "Reunited lost kid with parents. Got tipped.", delta: +20 },
+    { text: "Free sample frenzy—one goblin ate the tray. Manager sighed.", delta: -12 },
   ],
-  // TODO: add fleet / vile / bank / casino / reality next
+  fleet: [
+    { text: "Closed a warranty bundle on a mid-tier sedan. Sweet commission.", delta: +120 },
+    { text: "Gave away too much on a trade-in.", delta: -90 },
+    { text: "Delivered a flawless test drive; customer signed on the spot.", delta: +150 },
+    { text: "Forgot to file the DMV form—paperwork penalty.", delta: -40 },
+    { text: "Upsold ceramic coating and floor mats.", delta: +80 },
+    { text: "Customer ghosted after 3 hours of negotiation. Pain.", delta: -30 },
+    { text: "Social post brought in a hot lead—bonus payout.", delta: +60 },
+    { text: "Scratched a demo car with a key fob—oops.", delta: -120 },
+    { text: "You negotiated like a Sith lord. Management slips you a bonus.", delta: +100 },
+    { text: "Left the headlights on overnight—dead battery fee.", delta: -35 },
+  ],
+  vile: [
+    { text: "Nailed a 5-drink round in 30 seconds flat. Tips!", delta: +70 },
+    { text: "Shattered a martini glass mid-shake. Mood killer.", delta: -25 },
+    { text: "Recommended a perfect pairing; customer raved.", delta: +40 },
+    { text: "Overpoured the expensive whiskey. Oof.", delta: -45 },
+    { text: "Invented a crowd-favorite: ‘Distorted Sunset.’", delta: +55 },
+    { text: "Wrong order sent out twice. Refund time.", delta: -30 },
+    { text: "Handled a rowdy table with charm and zero police.", delta: +35 },
+    { text: "Spilled a tray on the floor… and your shoes.", delta: -20 },
+    { text: "Happy hour crush managed like a champ.", delta: +50 },
+    { text: "Forgot to ring in a drink. Comped.", delta: -18 },
+  ],
+  bank: [
+    { text: "Balanced the vault to the cent. Manager slow-clapped.", delta: +40 },
+    { text: "Mismatched account digits—had to reverse a transfer.", delta: -35 },
+    { text: "Upsold a high-yield account. Commission hits.", delta: +60 },
+    { text: "ATM jam on your watch. Service call charge.", delta: -25 },
+    { text: "Saved a client from a phishing scam. Hero bonus.", delta: +45 },
+    { text: "Forgot to notarize a form. Back to square one.", delta: -20 },
+    { text: "Cross-sold a small business loan lead.", delta: +75 },
+    { text: "Miscounted cash drawer by 10 DD. You covered it.", delta: -10 },
+    { text: "Calmed a line after a system hiccup. Customer kudos.", delta: +30 },
+    { text: "Printed the wrong statements for three clients.", delta: -22 },
+  ],
+  casino: [
+    { text: "Kept the table moving—players loved you. Tips stack.", delta: +85 },
+    { text: "Mispaid a blackjack. Had to reconcile.", delta: -60 },
+    { text: "Spotted a cheat attempt. Security praises you.", delta: +90 },
+    { text: "Miscalculated roulette payout. Math strikes back.", delta: -45 },
+    { text: "High-roller tipped after a good run.", delta: +120 },
+    { text: "Argued with a sore loser—supervisor intervention.", delta: -30 },
+    { text: "Flawless dealing for an hour straight. Flow state bonus.", delta: +75 },
+    { text: "Dropped a whole rack of chips. Embarrassing.", delta: -25 },
+    { text: "Taught a newbie the rules; they stuck around.", delta: +35 },
+    { text: "Misread hand signals. Minor penalty.", delta: -20 },
+  ],
+  reality: [
+    { text: "Hosted an open house with stellar turnout.", delta: +70 },
+    { text: "Forgot the lockbox code—late start.", delta: -25 },
+    { text: "Negotiated a clean offer over asking.", delta: +110 },
+    { text: "Misplaced a key for an hour. Yikes.", delta: -30 },
+    { text: "Staged a room perfectly—buyers swooned.", delta: +55 },
+    { text: "Inspection surprise—deal delayed.", delta: -40 },
+    { text: "Found an off-market gem. Lead bonus.", delta: +80 },
+    { text: "Printed brochures with the wrong phone number.", delta: -20 },
+    { text: "Client testimonial goes viral. Referral bonus.", delta: +65 },
+    { text: "Double-booked a showing. Awkward shuffles ensued.", delta: -18 },
+  ],
 };
 
-/** COMMANDS ******************************************************************/
+/** ============================================================================
+ *  COMMANDS
+ * ========================================================================== */
 
 export async function onMessageCreate(msg) {
   if (msg.author.bot) return;
@@ -138,7 +235,7 @@ export async function onMessageCreate(msg) {
       return msg.reply(`You're already clocked in at **${existing.company}** as **${existing.title}**.`);
     }
 
-    // If user provided a vendor alias, sanity-check it matches their company
+    // Optional explicit alias check
     const userAlias = parts[1]?.toLowerCase();
     const expectedAlias = companyToVendor(job.company);
     if (userAlias && expectedAlias && userAlias !== expectedAlias) {
@@ -148,7 +245,7 @@ export async function onMessageCreate(msg) {
     const shift = {
       company: job.company,
       title: job.title,
-      vendor: expectedAlias, // null is allowed if unmapped; we only gate by channel when ENFORCE=1
+      vendor: expectedAlias,
       startedAt: Date.now(),
       events: 0,
     };
@@ -176,7 +273,6 @@ export async function onMessageCreate(msg) {
       return msg.reply("You need to work from your workplace channel.");
     }
 
-    // vendor alias drives event table; fall back to no-op if unknown
     const vendor = companyToVendor(shift.company) || shift.vendor || "pantry";
     const table = EVENTS[vendor];
     if (!table || !table.length) {
@@ -185,12 +281,11 @@ export async function onMessageCreate(msg) {
 
     const cdLeft = await checkCooldown(msg.author.id);
     if (cdLeft > 0) {
-      return msg.reply(`⏳ Take a breath—next task available in **${cdLeft}s**.`);
+      return msg.reply(`⏳ Take a breath—next task in **${cdLeft}s**.`);
     }
 
     // pick random event & apply
-    const idx = Math.floor(Math.random() * table.length);
-    const event = table[idx];
+    const event = table[Math.floor(Math.random() * table.length)];
     let deltaApplied = 0;
 
     try {
@@ -198,21 +293,18 @@ export async function onMessageCreate(msg) {
         await addBalance(msg.author.id, event.delta);
         deltaApplied = event.delta;
       } else if (event.delta < 0) {
-        // don’t allow negative wallet; clamp if needed
         const abs = Math.abs(event.delta);
         try {
           await subBalance(msg.author.id, abs);
           deltaApplied = event.delta;
         } catch {
-          // insufficient funds; apply what we can (0) and narrate it
-          deltaApplied = 0;
+          deltaApplied = 0; // couldn't cover negative; narrate but don't go below 0
         }
       }
       await addShiftDelta(msg.author.id, deltaApplied);
-      // bump event count
       const updated = { ...shift, events: (shift.events || 0) + 1 };
       await setShift(msg.author.id, updated);
-    } catch (err) {
+    } catch {
       return msg.reply("Task failed to process—try again in a moment.");
     }
 
@@ -239,8 +331,6 @@ export async function onMessageCreate(msg) {
     const total = base + delta;
 
     if (total > 0) await addBalance(msg.author.id, total);
-    // If negative total somehow, we won't subtract at clockout; negatives were already applied on !work.
-
     await clearShift(msg.author.id);
 
     const summary = new EmbedBuilder()
