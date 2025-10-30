@@ -14,6 +14,9 @@ import { fetch as undiciFetch } from "undici";
 import { DUEL_ROASTS, RALLY_LINES, BAR_EVENTS, INVASION_STARTS } from "./faction-text.js";
 import { Redis } from "@upstash/redis";
 import { LOVE_TIERS } from "./love-tiers.js"; 
+import { onMessageCreate as onBankMsg } from "./economy/bank-commands.js";
+import { onMessageCreate as onInventoryMsg } from "./economy/inventory-commands.js";
+import { onMessageCreate as onPantryMsg } from "./economy/vendor-pantry.js";
 import {
   onMessageCreate as onJobMessage,
   onInteractionCreate as onJobInteraction,
@@ -77,6 +80,13 @@ client.on("interactionCreate", (int) => {
 client.login(TOKEN).catch((err) => {
   console.error("Discord login failed:", err);
   process.exit(1);
+});
+
+// ---------- Economy Listener -------
+client.on("messageCreate", (msg) => {
+  onBankMsg(msg);
+  onInventoryMsg(msg);
+  onPantryMsg(msg);
 });
 
 // ---------- Award log (shared) ----------
