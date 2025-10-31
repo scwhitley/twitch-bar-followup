@@ -29,48 +29,46 @@ const THANKS = [
   "House rule: sip like a Sith, tip like a Senator.",
 ];
 
-function menuEmbed() {
-  const lines = DRINKS.map(d => `• **!${d.alias}** — ${d.name} · **${d.price} DD**\n  _${d.desc}_`);
-  return new EmbedBuilder()
+const menuEmbed = () =>
+  new EmbedBuilder()
     .setTitle("🍸 The Stirred Veil — Menu")
-    .setDescription(lines.join("\n"))
+    .setDescription(DRINKS.map(d => `• **!${d.alias}** — ${d.name} · **${d.price} DD**\n  _${d.desc}_`).join("\n"))
     .setColor("Purple");
-}
 
-async function handleBuy(msg, drink, qty = 1) {
+async function buy(msg, drink, qty = 1) {
   const total = drink.price * qty;
   const bal = await getBalance(msg.author.id);
-  if (bal < total) return msg.reply(`You’re short **${total - bal} DD** for ${qty} × ${drink.name}.`);
+  if (bal < total) { await msg.reply(`You’re short **${total - bal} DD**.`); msg.__handled = true; return; }
 
   await subBalance(msg.author.id, total);
   await addItem(msg.author.id, `Drink: ${drink.name}`, qty);
 
-  const thank = THANKS[Math.floor(Math.random() * THANKS.length)];
   const e = new EmbedBuilder()
     .setTitle("🥂 Order Up")
-    .setDescription(`**${msg.author.username}** purchased ${qty} × **${drink.name}** for **${total} DD**.\n${thank}`)
-    .setFooter({ text: "The Stirred Veil" })
+    .setDescription(`**${msg.author.username}** purchased ${qty} × **${drink.name}** for **${total} DD**.\n${THANKS[Math.floor(Math.random()*THANKS.length)]}`)
     .setColor("Purple");
-  return msg.channel.send({ embeds: [e] });
+  await msg.channel.send({ embeds: [e] });
+  msg.__handled = true;
 }
 
 export async function onMessageCreate(msg) {
-  if (msg.author.bot) return;
+  if (msg.author.bot || msg.__handled) return;
   const parts = msg.content.trim().split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
 
-  // Show menu
-  if (cmd === "!menu" || cmd === "!bar" || (cmd === "!menu" && ["bar","veil","drinks"].includes((parts[1]||"").toLowerCase()))) {
-    return msg.channel.send({ embeds: [menuEmbed()] });
+  if (cmd === "!menu" || cmd === "!bar") {
+    await msg.channel.send({ embeds: [menuEmbed()] });
+    msg.__handled = true;
+    return;
   }
 
-  // Dynamic per-drink purchase: !oldfashioned, !sithsour, etc. Optional qty.
   if (cmd.startsWith("!")) {
     const alias = cmd.slice(1);
     const drink = DRINKS.find(d => d.alias === alias);
     if (!drink) return;
     const qtyArg = parseInt(parts[1], 10);
     const qty = Number.isFinite(qtyArg) && qtyArg > 0 ? qtyArg : 1;
-    return handleBuy(msg, drink, qty);
+    await buy(msg, drink, qty);
+    return;
   }
 }
