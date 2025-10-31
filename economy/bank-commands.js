@@ -1,40 +1,44 @@
-import { deposit, withdraw, getBalance, getBank } from "./econ-core.js";
+// economy/bank-commands.js
 import { EmbedBuilder } from "discord.js";
-
+import { getBalance, addBalance, subBalance, getBank, addBank, subBank } from "./econ-core.js";
 
 export async function onMessageCreate(msg) {
-  if (msg.author.bot) return;
-  const [cmd, arg] = msg.content.trim().split(/\s+/);
+  if (msg.author.bot || msg.__handled) return;
 
-  if (cmd === "!balance") {
-    const [wallet, bank] = await Promise.all([
-      getBalance(msg.author.id),
-      getBank(msg.author.id),
-    ]);
+  const parts = msg.content.trim().split(/\s+/);
+  const cmd = (parts[0] || "").toLowerCase();
+
+  if (cmd === "!balance" || cmd === "!bal") {
+    const [wallet, bank] = await Promise.all([getBalance(msg.author.id), getBank(msg.author.id)]);
     const e = new EmbedBuilder()
-      .setTitle(`💳 ${msg.author.username}'s Balances`)
+      .setTitle(`🏦 ${msg.author.username} — Balance`)
       .addFields(
         { name: "Wallet", value: `${wallet} DD`, inline: true },
         { name: "Bank", value: `${bank} DD`, inline: true },
-        { name: "Total", value: `${wallet + bank} DD`, inline: false }
-      )
-      .setColor("Green");
-    return msg.channel.send({ embeds: [e] });
+        { name: "Total", value: `${wallet + bank} DD`, inline: true },
+      );
+    await msg.channel.send({ embeds: [e] });
+    msg.__handled = true;
+    return;
   }
 
-  if (cmd === "!deposit" || cmd === "!withdraw") {
-    const amt = parseInt(arg);
-    if (isNaN(amt) || amt <= 0) return msg.reply("Enter a valid amount.");
-    try {
-      if (cmd === "!deposit") await deposit(msg.author.id, amt);
-      else await withdraw(msg.author.id, amt);
-      const wallet = await getBalance(msg.author.id);
-      const bank = await getBank(msg.author.id);
-      return msg.reply(
-        `✅ Transaction complete. Wallet: ${wallet} DD | Bank: ${bank} DD`
-      );
-    } catch (e) {
-      return msg.reply(`❌ ${e.message}`);
-    }
+  if (cmd === "!deposit") {
+    const n = Math.max(0, parseInt(parts[1] || "0", 10));
+    if (!n) { await msg.reply("Usage: `!deposit <amount>`"); msg.__handled = true; return; }
+    await subBalance(msg.author.id, n);
+    await addBank(msg.author.id, n);
+    await msg.reply(`Deposited **${n} DD**.`);
+    msg.__handled = true;
+    return;
+  }
+
+  if (cmd === "!withdraw") {
+    const n = Math.max(0, parseInt(parts[1] || "0", 10));
+    if (!n) { await msg.reply("Usage: `!withdraw <amount>`"); msg.__handled = true; return; }
+    await subBank(msg.author.id, n);
+    await addBalance(msg.author.id, n);
+    await msg.reply(`Withdrew **${n} DD**.`);
+    msg.__handled = true;
+    return;
   }
 }
