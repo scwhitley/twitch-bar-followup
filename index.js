@@ -137,7 +137,7 @@ client.on("messageCreate", (msg) => {
   onPantryMsg(msg);
   onAdminEconMsg(msg);
   onWorkMsg(msg);
-  onVeilMsg(msg);
+  onBarMsg(msg);
   onFleetMsg(msg);
   onRealityMsg(msg);
   onFleetChargeMsg(msg); // 🔋 charge system
