@@ -91,8 +91,9 @@ const client = new Client({
 
 // --- Unified dispatcher: route every message to each handler safely ---
 client.on("messageCreate", async (msg) => {
-  // IMPORTANT: don't let one handler crash the rest
+  // If a handler processes the message, it should set msg.__handled = true
   const run = async (fn, label) => {
+    if (msg.__handled) return; // short-circuit
     try { await fn?.(msg); } catch (e) { console.error("[handler error]", label, e); }
   };
 
@@ -101,12 +102,12 @@ client.on("messageCreate", async (msg) => {
   await run(onWorkMsg, "work");
   await run(onPantryMsg, "pantry");
   await run(onBarMsg, "bar");
-  await run(onFleetMsg, "fleet");
+  await run(onFleetMsg, "fleet");          // inventory + car details
+  await run(onFleetChargeMsg, "fleet-charge"); // drive/charge/carcharge only
   await run(onRealityMsg, "reality");
   await run(onBankMsg, "bank");
   await run(onInventoryMsg, "inventory");
   await run(onAdminEconMsg, "admin-econ");
-  await run(onFleetChargeMsg, "fleet-charge");
 });
 
 client.on("interactionCreate", async (interaction) => {
