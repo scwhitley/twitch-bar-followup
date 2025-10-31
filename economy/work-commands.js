@@ -1,48 +1,37 @@
 // economy/work-commands.js
-import { EmbedBuilder } from "discord.js";
+import { EmbedBuilder, PermissionsBitField } from "discord.js";
 import { Redis } from "@upstash/redis";
 import { addBalance, subBalance } from "./econ-core.js";
-import { PermissionsBitField } from "discord.js";
 
 const redis = Redis.fromEnv();
 
 /** ============================================================================
  *  CONFIG
  *  Set ENFORCE_WORK_CHANNELS=1 in your Render env to force the correct channels.
+ *  Optional: ADMIN_BYPASS_WORK=1 lets Admins clock in anywhere (with alias) and skip cooldowns.
  * ========================================================================== */
 
 const ENFORCE = process.env.ENFORCE_WORK_CHANNELS === "1";
+const ADMIN_BYPASS = process.env.ADMIN_BYPASS_WORK === "1";
+const isAdmin = (m) => !!m?.permissions?.has(PermissionsBitField.Flags.Administrator);
 
-// Company → vendor alias + allowed channels (IDs preferred)
+// Company → vendor alias + allowed channels
+// NOTE: Include common misspellings/variants so checks always match the job company name.
 const VENDOR_ALIASES = {
-  "Crimson Pantry": {
-    alias: "pantry",
-    channels: ["1427357566735880203"],
-  },
-  "Distorted Fleet Exports": {
-    alias: "fleet",
-    channels: ["1427357852804055160"],
-  },
-  "Stirred Vile": {
-    alias: "vile",
-    channels: ["1427357990394007592"], // #the-stirred-veil
-  },
-  "Distorted Realm Reserve": {
-    alias: "bank",
-    channels: ["1427358385581588657"],
-  },
-  "Distorted Casino": {
-    alias: "casino",
-    channels: ["1427358631610814484"],
-  },
-  "Distorted Crimson Reality": {
-    alias: "reality",
-    channels: ["1428520971010048051"],
-  },
-  "Distorted Fleet Charge": {
-  alias: "charge",
-  channels: ["1433493619192500275"], // or your channel ID if enforcing
-  },
+  "Crimson Pantry": { alias: "pantry", channels: ["1427357566735880203"] },
+
+  "Distorted Fleet Exports": { alias: "fleet", channels: ["1427357852804055160"] },
+
+  "The Stirred Veil": { alias: "vile", channels: ["1427357990394007592"] },
+  "Stirred Veil":     { alias: "vile", channels: ["1427357990394007592"] },
+  "Stirred Vile":     { alias: "vile", channels: ["1427357990394007592"] }, // legacy typo support
+
+  "Distorted Realm Reserve": { alias: "bank", channels: ["1427358385581588657"] },
+  "Distorted Casino":        { alias: "casino", channels: ["1427358631610814484"] },
+  "Distorted Crimson Reality": { alias: "reality", channels: ["1428520971010048051"] },
+
+  // Not a job company, but useful if you ever clock people into charging station shifts
+  "Distorted Fleet Charge": { alias: "charge", channels: ["1433493619192500275"] },
 };
 
 // Base payroll per shift by role title
@@ -62,8 +51,6 @@ function basePayForRole(title = "") {
 
 const WORK_COOLDOWN_S = 45;
 
-const ADMIN_BYPASS = process.env.ADMIN_BYPASS_WORK === "1"; // set to "1" in Render to enable
-const isAdmin = (m) => !!m?.permissions?.has(PermissionsBitField.Flags.Administrator);
 /** ============================================================================
  *  REDIS KEYS
  * ========================================================================== */
@@ -96,7 +83,6 @@ function checkChannelOk(company, channel, member) {
   if (!meta) return true;
   return channelMatches(meta, channel);
 }
-
 
 async function getShift(userId) {
   const data = await redis.get(SHIFT_KEY(userId));
@@ -212,8 +198,7 @@ const EVENTS = {
     { text: "Printer jam ate five receipts.", delta: -8 },
     { text: "Cleaned bays and cleared cones like a pro.", delta: +12 },
     { text: "Wrong rate applied—refund processed.", delta: -14 },
-],
-
+  ],
 };
 
 /** ============================================================================
@@ -221,145 +206,135 @@ const EVENTS = {
  * ========================================================================== */
 
 export async function onMessageCreate(msg) {
-  if (msg.author.bot) return;
+  // NEW: single-response guard
+  if (msg.author.bot || msg.__handled) return;
+
   const parts = msg.content.trim().split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
 
   // --------- !clockin [vendorAlias] ---------
- // --------- !clockin [vendorAlias]
-if (cmd === "!clockin") {
-  let job = await getUserJob(msg.author.id);
-  const userAlias = parts[1]?.toLowerCase();
+  if (cmd === "!clockin") {
+    let job = await getUserJob(msg.author.id);
+    const userAlias = parts[1]?.toLowerCase();
 
-  // Admins can clock in without a job if ADMIN_BYPASS=1 and they provide an alias
-  if (!job && ADMIN_BYPASS && isAdmin(msg.member) && userAlias) {
-    const entry = Object.entries(VENDOR_ALIASES).find(([, v]) => v.alias === userAlias);
-    if (!entry) return msg.reply("Unknown vendor alias. Try one of: pantry, fleet, vile, bank, casino, reality.");
-    const [company] = entry;
-    job = { company, title: "Admin Temp Shift" };
-  }
-
-  if (!job) return msg.reply("You don't have a job yet. Use `!job` to get assigned first.");
-
-  if (!checkChannelOk(job.company, msg.channel, msg.member)) {
-    return msg.reply("You need to clock in from your workplace channel.");
-  }
-
-  const existing = await getShift(msg.author.id);
-  if (existing) {
-    return msg.reply(`You're already clocked in at **${existing.company}** as **${existing.title}**.`);
-  }
-
-  const expectedAlias = companyToVendor(job.company);
-  if (
-    userAlias && expectedAlias && userAlias !== expectedAlias &&
-    !(ADMIN_BYPASS && isAdmin(msg.member))
-  ) {
-    return msg.reply(`That vendor doesn't match your job. You work at **${job.company}**.`);
-  }
-
-  const shift = {
-    company: job.company,
-    title: job.title,
-    vendor: expectedAlias || userAlias || null,
-    startedAt: Date.now(),
-    events: 0,
-  };
-  await setShift(msg.author.id, shift);
-  await addShiftDelta(msg.author.id, 0);
-
-  const basePay = basePayForRole(job.title);
-  const e = new EmbedBuilder()
-    .setTitle("🕒 Shift Started")
-    .setDescription(
-      `Clocked in at **${job.company}** as **${job.title}**.\n` +
-      `Base shift pay on clockout: **${basePay} DD**.\n` +
-      `Run **!work** to handle tasks/events and stack bonuses (or penalties).`
-    )
-    .setColor("Green");
-  return msg.channel.send({ embeds: [e] });
-}
-
-// --------- !work
-if (cmd === "!work") {
-  const shift = await getShift(msg.author.id);
-  if (!shift) return msg.reply("You're not clocked in. Use `!clockin` first.");
-
-  if (!checkChannelOk(shift.company, msg.channel, msg.member)) {
-    return msg.reply("You need to work from your workplace channel.");
-  }
-
-  const vendor = companyToVendor(shift.company) || shift.vendor || "pantry";
-  const table = EVENTS[vendor];
-  if (!table || !table.length) {
-    return msg.reply("This workplace doesn't have tasks yet. Ping the admin to add events.");
-  }
-
-  // Admins can skip cooldown if ADMIN_BYPASS=1
-  const cdLeft = (ADMIN_BYPASS && isAdmin(msg.member)) ? 0 : await checkCooldown(msg.author.id);
-  if (cdLeft > 0) {
-    return msg.reply(`⏳ Take a breath—next task in **${cdLeft}s**.`);
-  }
-
-  const event = table[Math.floor(Math.random() * table.length)];
-  let deltaApplied = 0;
-
-  try {
-    if (event.delta > 0) {
-      await addBalance(msg.author.id, event.delta);
-      deltaApplied = event.delta;
-    } else if (event.delta < 0) {
-      const abs = Math.abs(event.delta);
-      try {
-        await subBalance(msg.author.id, abs);
-        deltaApplied = event.delta;
-      } catch {
-        // couldn't cover negative; narrate but don't go below 0
-        deltaApplied = 0;
-      }
+    // Admins can clock in without a job if ADMIN_BYPASS=1 and they provide an alias
+    if (!job && ADMIN_BYPASS && isAdmin(msg.member) && userAlias) {
+      const entry = Object.entries(VENDOR_ALIASES).find(([, v]) => v.alias === userAlias);
+      if (!entry) { await msg.reply("Unknown vendor alias. Try one of: pantry, fleet, vile, bank, casino, reality, charge."); msg.__handled = true; return; }
+      const [company] = entry;
+      job = { company, title: "Admin Temp Shift" };
     }
-    await addShiftDelta(msg.author.id, deltaApplied);
-    const updated = { ...shift, events: (shift.events || 0) + 1 };
-    await setShift(msg.author.id, updated);
-  } catch {
-    return msg.reply("Task failed to process—try again in a moment.");
+
+    if (!job) { await msg.reply("You don't have a job yet. Use `!job` to get assigned first."); msg.__handled = true; return; }
+
+    if (!checkChannelOk(job.company, msg.channel, msg.member)) {
+      await msg.reply("You need to clock in from your workplace channel."); msg.__handled = true; return;
+    }
+
+    const existing = await getShift(msg.author.id);
+    if (existing) { await msg.reply(`You're already clocked in at **${existing.company}** as **${existing.title}**.`); msg.__handled = true; return; }
+
+    const expectedAlias = companyToVendor(job.company);
+    if (userAlias && expectedAlias && userAlias !== expectedAlias && !(ADMIN_BYPASS && isAdmin(msg.member))) {
+      await msg.reply(`That vendor doesn't match your job. You work at **${job.company}**.`); msg.__handled = true; return;
+    }
+
+    const shift = {
+      company: job.company,
+      title: job.title,
+      vendor: expectedAlias || userAlias || null,
+      startedAt: Date.now(),
+      events: 0,
+    };
+    await setShift(msg.author.id, shift);
+    await addShiftDelta(msg.author.id, 0);
+
+    const basePay = basePayForRole(job.title);
+    const e = new EmbedBuilder()
+      .setTitle("🕒 Shift Started")
+      .setDescription(
+        `Clocked in at **${job.company}** as **${job.title}**.\n` +
+        `Base shift pay on clockout: **${basePay} DD**.\n` +
+        `Run **!work** to handle tasks/events and stack bonuses (or penalties).`
+      )
+      .setColor("Green");
+    await msg.channel.send({ embeds: [e] });
+    msg.__handled = true; return;
   }
 
-  const sign = deltaApplied >= 0 ? "+" : "−";
-  const e = new EmbedBuilder()
-    .setTitle("🧰 Task Completed")
-    .setDescription(`${event.text}`)
-    .addFields({ name: "Shift delta", value: `${sign}${Math.abs(deltaApplied)} DD`, inline: true })
-    .setColor(deltaApplied >= 0 ? "Green" : "Orange");
-  return msg.channel.send({ embeds: [e] });
-}
+  // --------- !work
+  if (cmd === "!work") {
+    const shift = await getShift(msg.author.id);
+    if (!shift) { await msg.reply("You're not clocked in. Use `!clockin` first."); msg.__handled = true; return; }
 
-// --------- !clockout
-if (cmd === "!clockout") {
-  const shift = await getShift(msg.author.id);
-  if (!shift) return msg.reply("You're not clocked in.");
+    if (!checkChannelOk(shift.company, msg.channel, msg.member)) {
+      await msg.reply("You need to work from your workplace channel."); msg.__handled = true; return;
+    }
 
-  if (!checkChannelOk(shift.company, msg.channel, msg.member)) {
-    return msg.reply("Clock out from your workplace channel.");
+    const vendor = companyToVendor(shift.company) || shift.vendor || "pantry";
+    const table = EVENTS[vendor];
+    if (!table || !table.length) { await msg.reply("This workplace doesn't have tasks yet. Ping the admin to add events."); msg.__handled = true; return; }
+
+    // Admins can skip cooldown if ADMIN_BYPASS=1
+    const cdLeft = (ADMIN_BYPASS && isAdmin(msg.member)) ? 0 : await checkCooldown(msg.author.id);
+    if (cdLeft > 0) { await msg.reply(`⏳ Take a breath—next task in **${cdLeft}s**.`); msg.__handled = true; return; }
+
+    const event = table[Math.floor(Math.random() * table.length)];
+    let deltaApplied = 0;
+
+    try {
+      if (event.delta > 0) {
+        await addBalance(msg.author.id, event.delta);
+        deltaApplied = event.delta;
+      } else if (event.delta < 0) {
+        const abs = Math.abs(event.delta);
+        try { await subBalance(msg.author.id, abs); deltaApplied = event.delta; }
+        catch { deltaApplied = 0; } // can't go below 0
+      }
+      await addShiftDelta(msg.author.id, deltaApplied);
+      const updated = { ...shift, events: (shift.events || 0) + 1 };
+      await setShift(msg.author.id, updated);
+    } catch {
+      await msg.reply("Task failed to process—try again in a moment."); msg.__handled = true; return;
+    }
+
+    const sign = deltaApplied >= 0 ? "+" : "−";
+    const e = new EmbedBuilder()
+      .setTitle("🧰 Task Completed")
+      .setDescription(`${event.text}`)
+      .addFields({ name: "Shift delta", value: `${sign}${Math.abs(deltaApplied)} DD`, inline: true })
+      .setColor(deltaApplied >= 0 ? "Green" : "Orange");
+    await msg.channel.send({ embeds: [e] });
+    msg.__handled = true; return;
   }
 
-  const base = basePayForRole(shift.title);
-  const delta = await getShiftDelta(msg.author.id);
-  const total = base + delta;
+  // --------- !clockout
+  if (cmd === "!clockout") {
+    const shift = await getShift(msg.author.id);
+    if (!shift) { await msg.reply("You're not clocked in."); msg.__handled = true; return; }
 
-  if (total > 0) await addBalance(msg.author.id, total);
-  await clearShift(msg.author.id);
+    if (!checkChannelOk(shift.company, msg.channel, msg.member)) {
+      await msg.reply("Clock out from your workplace channel."); msg.__handled = true; return;
+    }
 
-  const summary = new EmbedBuilder()
-    .setTitle("🧾 Shift Summary")
-    .setDescription(
-      `**${shift.company}** — **${shift.title}**\n` +
-      `Tasks completed: **${shift.events || 0}**\n` +
-      `Base pay: **${base} DD**\n` +
-      `Task delta: **${delta >= 0 ? "+" : "−"}${Math.abs(delta)} DD**\n` +
-      `**Paid:** ${total} DD`
-    )
-    .setColor("Blue");
-  return msg.channel.send({ embeds: [summary] });
+    const base = basePayForRole(shift.title);
+    const delta = await getShiftDelta(msg.author.id);
+    const total = base + delta;
+
+    if (total > 0) await addBalance(msg.author.id, total);
+    await clearShift(msg.author.id);
+
+    const summary = new EmbedBuilder()
+      .setTitle("🧾 Shift Summary")
+      .setDescription(
+        `**${shift.company}** — **${shift.title}**\n` +
+        `Tasks completed: **${shift.events || 0}**\n` +
+        `Base pay: **${base} DD**\n` +
+        `Task delta: **${delta >= 0 ? "+" : "−"}${Math.abs(delta)} DD**\n` +
+        `**Paid:** ${total} DD`
+      )
+      .setColor("Blue");
+    await msg.channel.send({ embeds: [summary] });
+    msg.__handled = true; return;
   }
 }
