@@ -4,8 +4,10 @@ import { getBalance, addBalance, subBalance } from "./econ-core.js";
 
 function isAdmin(member) {
   if (!member) return false;
-  return member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-         member.permissions.has(PermissionsBitField.Flags.ManageGuild);
+  return (
+    member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+    member.permissions.has(PermissionsBitField.Flags.ManageGuild)
+  );
 }
 
 function parseArgs(msg) {
@@ -18,20 +20,27 @@ function parseArgs(msg) {
 }
 
 export async function onMessageCreate(msg) {
-  if (msg.author.bot) return;
+  // 🔒 single-response guard
+  if (msg.author.bot || msg.__handled) return;
+
   const content = msg.content?.trim().toLowerCase() || "";
-  if (!content.startsWith("!grantdd") &&
-      !content.startsWith("!takedd") &&
-      !content.startsWith("!setdd")) return;
+  const isAdminCmd =
+    content.startsWith("!grantdd") ||
+    content.startsWith("!takedd") ||
+    content.startsWith("!setdd");
+
+  if (!isAdminCmd) return; // not our command
 
   if (!isAdmin(msg.member)) {
-    return void msg.reply("🚫 You don’t have permission to run economy admin commands.");
+    await msg.reply("🚫 You don’t have permission to run economy admin commands.");
+    msg.__handled = true; return;
   }
 
   const { cmd, mention, amount } = parseArgs(msg);
-  if (!mention) return void msg.reply("Tag a user, e.g. `!grantdd @user 100`");
+  if (!mention) { await msg.reply("Tag a user, e.g. `!grantdd @user 100`"); msg.__handled = true; return; }
   if (!Number.isFinite(amount) || amount <= 0) {
-    return void msg.reply("Enter a valid positive amount.");
+    await msg.reply("Enter a valid **positive** amount.");
+    msg.__handled = true; return;
   }
 
   const userId = mention.id;
@@ -39,7 +48,7 @@ export async function onMessageCreate(msg) {
   try {
     if (cmd === "!grantdd") {
       const after = await addBalance(userId, amount);
-      return void msg.channel.send({
+      await msg.channel.send({
         embeds: [
           new EmbedBuilder()
             .setTitle("💸 Funds Granted")
@@ -47,12 +56,13 @@ export async function onMessageCreate(msg) {
             .setColor("Green"),
         ],
       });
+      msg.__handled = true; return;
     }
 
     if (cmd === "!takedd") {
       await subBalance(userId, amount);
       const after = await getBalance(userId);
-      return void msg.channel.send({
+      await msg.channel.send({
         embeds: [
           new EmbedBuilder()
             .setTitle("🧾 Funds Removed")
@@ -60,6 +70,7 @@ export async function onMessageCreate(msg) {
             .setColor("Orange"),
         ],
       });
+      msg.__handled = true; return;
     }
 
     if (cmd === "!setdd") {
@@ -71,7 +82,7 @@ export async function onMessageCreate(msg) {
         await subBalance(userId, Math.abs(delta));
       }
       const after = await getBalance(userId);
-      return void msg.channel.send({
+      await msg.channel.send({
         embeds: [
           new EmbedBuilder()
             .setTitle("🏦 Balance Set")
@@ -79,8 +90,10 @@ export async function onMessageCreate(msg) {
             .setColor("Blue"),
         ],
       });
+      msg.__handled = true; return;
     }
   } catch (err) {
-    return void msg.reply(`❌ ${err.message || "Operation failed."}`);
+    await msg.reply(`❌ ${err?.message || "Operation failed."}`);
+    msg.__handled = true; return;
   }
 }
