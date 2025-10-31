@@ -42,35 +42,56 @@ function aptEmbed(a) {
     .setColor("DarkAqua");
 }
 
+const listEmbed = () =>
+  new EmbedBuilder()
+    .setTitle("🏙️ Distorted Crimson Reality — Listings (Distortia)")
+    .setDescription(APTS.map(a => `• **!${a.alias}** — ${a.name} · **${a.price} DD** · ${a.area}`).join("\n"))
+    .setColor("DarkButNotBlack");
+
+const detailEmbed = (a) =>
+  new EmbedBuilder()
+    .setTitle(`🏢 ${a.name}`)
+    .addFields(
+      { name: "Price", value: `${a.price} DD`, inline: true },
+      { name: "Area", value: a.area, inline: true },
+      { name: "Layout", value: a.rooms, inline: true },
+      { name: "Features", value: a.feat.map(f => `• ${f}`).join("\n") },
+    );
+
 export async function onMessageCreate(msg) {
-  if (msg.author.bot) return;
+  if (msg.author.bot || msg.__handled) return;
   const parts = msg.content.trim().split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
 
   if (cmd === "!apartments" || cmd === "!apts" || cmd === "!realty") {
-    return msg.channel.send({ embeds: [listEmbed()] });
+    await msg.channel.send({ embeds: [listEmbed()] });
+    msg.__handled = true;
+    return;
   }
 
   if (cmd.startsWith("!")) {
     const alias = cmd.slice(1);
-    const a = APTS.find(x => x.alias === alias);
-    if (a) return msg.channel.send({ embeds: [aptEmbed(a)] });
+    const apt = APTS.find(a => a.alias === alias);
+    if (apt) {
+      await msg.channel.send({ embeds: [detailEmbed(apt)] });
+      msg.__handled = true;
+      return;
+    }
   }
 
   if (cmd === "!buyapt") {
     const alias = (parts[1] || "").toLowerCase();
-    const a = APTS.find(x => x.alias === alias);
-    if (!a) return msg.reply("Use `!apartments` to see listings, then `!buyapt <alias>`.");
+    const apt = APTS.find(a => a.alias === alias);
+    if (!apt) { await msg.reply("Use `!apartments` to see listings, then `!buyapt <alias>`."); msg.__handled = true; return; }
+
     const bal = await getBalance(msg.author.id);
-    if (bal < a.price) return msg.reply(`Insufficient funds. You need **${a.price - bal} DD** more.`);
+    if (bal < apt.price) { await msg.reply(`You need **${apt.price - bal} DD** more.`); msg.__handled = true; return; }
 
-    await subBalance(msg.author.id, a.price);
-    await addItem(msg.author.id, `Apartment: ${a.name}`, 1);
+    await subBalance(msg.author.id, apt.price);
+    await addItem(msg.author.id, `Apartment: ${apt.name} @ ${apt.area}`, 1);
 
-    const e = new EmbedBuilder()
-      .setTitle("🧾 Property Acquired")
-      .setDescription(`**${msg.author.username}** purchased **${a.name}** for **${a.price} DD**.\nWelcome to Distortia real estate supremacy.`)
-      .setColor("DarkAqua");
-    return msg.channel.send({ embeds: [e] });
+    await msg.channel.send({ embeds: [new EmbedBuilder().setTitle("🧾 Lease Signed").setDescription(`**${apt.name}** is now yours. Welcome to ${apt.area}.`)] });
+    msg.__handled = true;
+    return;
   }
 }
