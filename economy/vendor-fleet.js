@@ -5,7 +5,6 @@ import { Redis } from "@upstash/redis";
 const redis = Redis.fromEnv();
 
 // Price scale dropped. Added maxCharge (full battery units).
-// Keep alias-friendly names; users can own multiple cars.
 export const CARS = [
   { alias: "voidrunner",  name: "Kessel Voidrunner",  year: 2037, price: 650,  range: "620 mi/charge",  maxCharge: 620,  features: ["Grav-stabilized chassis", "Adaptive HUD", "Silent glide"] },
   { alias: "stargo",      name: "Coruscant Stargo S", year: 2038, price: 900,  range: "710 mi/charge",  maxCharge: 710,  features: ["Metro autopilot+", "Neon aerofoil", "Holo-dash"] },
@@ -29,36 +28,43 @@ export const CARS = [
   { alias: "echelon",     name: "Echelon Crown",      year: 2041, price: 2000, range: "820 mi/charge",  maxCharge: 820,  features: ["Crown AI", "Royal cabin", "Auto valet"] },
 ];
 
-const OWN_KEY = (uid) => `fleet:owned:${uid}`;                // set of aliases
-const CHARGE_KEY = (uid, alias) => `fleet:charge:${uid}:${alias}`; // integer current charge
+const OWN_KEY = (uid) => `fleet:owned:${uid}`;
+const CHARGE_KEY = (uid, alias) => `fleet:charge:${uid}:${alias}`;
 
-function carByAlias(alias) { return CARS.find(c => c.alias === alias); }
+const carByAlias = (alias) => CARS.find(c => c.alias === alias);
 
-function inventoryEmbed() {
-  const lines = CARS.map(c => `• **!${c.alias}** — ${c.name} (${c.year}) · **${c.price} DD**`);
-  return new EmbedBuilder().setTitle("🚗 Distorted Fleet — Inventory").setDescription(lines.join("\n")).setColor("DarkRed");
-}
+const inventoryEmbed = () =>
+  new EmbedBuilder()
+    .setTitle("🚗 Distorted Fleet — Inventory")
+    .setDescription(CARS.map(c => `• **!${c.alias}** — ${c.name} (${c.year}) · **${c.price} DD**`).join("\n"))
+    .setColor("DarkRed");
 
-function carDetailEmbed(car, charge=null) {
-  return new EmbedBuilder()
+const carDetailEmbed = (car, charge = null) =>
+  new EmbedBuilder()
     .setTitle(`🚘 ${car.name} — ${car.year}`)
     .addFields(
       { name: "Range (full)", value: car.range, inline: true },
       { name: "Price", value: `${car.price} DD`, inline: true },
       { name: "Features", value: car.features.map(f => `• ${f}`).join("\n") }
     )
-    .setFooter({ text: charge != null ? `Your current charge: ${charge}/${car.maxCharge}` : "Buy to unlock charge tracking" })
+    .setFooter({
+      text: charge != null
+        ? `Your current charge: ${charge}/${car.maxCharge}`
+        : "Buy to unlock charge tracking",
+    })
     .setColor("DarkRed");
-}
 
 export async function onMessageCreate(msg) {
-  if (msg.author.bot) return;
+  if (msg.author.bot || msg.__handled) return; // ← bail if someone else already responded
+
   const parts = msg.content.trim().split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
 
   // List inventory
   if (cmd === "!car" || cmd === "!cars" || cmd === "!inventorycars") {
-    return msg.channel.send({ embeds: [inventoryEmbed()] });
+    await msg.channel.send({ embeds: [inventoryEmbed()] });
+    msg.__handled = true; // ← claim the message
+    return;
   }
 
   // Detail via dynamic alias command: !voidrunner etc.
@@ -66,10 +72,11 @@ export async function onMessageCreate(msg) {
     const alias = cmd.slice(1);
     const car = carByAlias(alias);
     if (car) {
-      // if user owns it, show current charge
       const charge = await redis.get(CHARGE_KEY(msg.author.id, alias));
       const cur = charge != null ? parseInt(charge) : null;
-      return msg.channel.send({ embeds: [carDetailEmbed(car, cur)] });
+      await msg.channel.send({ embeds: [carDetailEmbed(car, cur)] });
+      msg.__handled = true;
+      return;
     }
   }
 
@@ -77,9 +84,18 @@ export async function onMessageCreate(msg) {
   if (cmd === "!buycar") {
     const alias = (parts[1] || "").toLowerCase();
     const car = carByAlias(alias);
-    if (!car) return msg.reply("Use `!car` to see inventory, then `!buycar <alias>`.");
+    if (!car) {
+      await msg.reply("Use `!car` to see inventory, then `!buycar <alias>`.");
+      msg.__handled = true;
+      return;
+    }
+
     const bal = await getBalance(msg.author.id);
-    if (bal < car.price) return msg.reply(`Insufficient funds. You need **${car.price - bal} DD** more.`);
+    if (bal < car.price) {
+      await msg.reply(`Insufficient funds. You need **${car.price - bal} DD** more.`);
+      msg.__handled = true;
+      return;
+    }
 
     await subBalance(msg.author.id, car.price);
     await redis.sadd(OWN_KEY(msg.author.id), alias);
@@ -88,8 +104,14 @@ export async function onMessageCreate(msg) {
 
     const e = new EmbedBuilder()
       .setTitle("🧾 Purchase Complete")
-      .setDescription(`**${msg.author.username}** purchased **${car.name}** for **${car.price} DD**.\nThanks for choosing Distorted Fleet Exports — enjoy the ride!`)
+      .setDescription(
+        `**${msg.author.username}** purchased **${car.name}** for **${car.price} DD**.\n` +
+        `Thanks for choosing Distorted Fleet Exports — enjoy the ride!`
+      )
       .setColor("DarkRed");
-    return msg.channel.send({ embeds: [e] });
+
+    await msg.channel.send({ embeds: [e] });
+    msg.__handled = true;
+    return;
   }
 }
