@@ -92,51 +92,43 @@ const client = new Client({
 // --- Unified dispatcher: route every message to each handler safely ---
 client.on("messageCreate", async (msg) => {
   // IMPORTANT: don't let one handler crash the rest
-  const run = async (fn) => {
-    try { await fn?.(msg); } catch (e) { console.error("[handler error]", fn?.name, e); }
+  const run = async (fn, label) => {
+    try { await fn?.(msg); } catch (e) { console.error("[handler error]", label, e); }
   };
 
-  await run(onBackstoryMsg);
-  await run(onJobMsg);
-  await run(onWorkMsg);
-  await run(onPantryMsg);
-  await run(onBarMsg);
-  await run(onFleetMsg);
-  await run(onRealityMsg);
-  await run(onBankMsg);
-  await run(onInventoryMsg);
-  await run(onAdminEconMsg);
-  await run(onFleetChargeMsg);
+  await run(onBackstoryMsg, "backstory");
+  await run(onJobMsg, "jobs");
+  await run(onWorkMsg, "work");
+  await run(onPantryMsg, "pantry");
+  await run(onBarMsg, "bar");
+  await run(onFleetMsg, "fleet");
+  await run(onRealityMsg, "reality");
+  await run(onBankMsg, "bank");
+  await run(onInventoryMsg, "inventory");
+  await run(onAdminEconMsg, "admin-econ");
+  await run(onFleetChargeMsg, "fleet-charge");
 });
 
 client.on("interactionCreate", async (interaction) => {
-  const runI = async (fn) => {
-    try { await fn?.(interaction); } catch (e) { console.error("[interaction error]", fn?.name, e); }
+  const runI = async (fn, label) => {
+    try { await fn?.(interaction); } catch (e) { console.error("[interaction error]", label, e); }
   };
 
-  await runI(onBackstoryInteraction);
-  await runI(onJobInteraction);
+  await runI(onBackstoryInteraction, "backstory-interaction");
+  await runI(onJobInteraction, "job-interaction");
 });
 
+// One ready log (use once to avoid dupes on hot-reload)
+client.once("ready", () => console.log(`Logged in as ${client.user.tag}`));
 
+// ---- NO OTHER messageCreate / interactionCreate listeners below this ----
 
-client.on("ready", () => console.log(`Logged in as ${client.user.tag}`));
-client.on("messageCreate", (msg) => {
-  onMessageCreate(msg); // your existing backstory handler
-  onJobMessage(msg);    // 👈 add this line
-});
-
-
-
-client.on("interactionCreate", (int) => {
-  onInteractionCreate(int); // existing
-  onJobInteraction(int);    // 👈 add this line
-});
-
+// Login (keep your TOKEN definition above this)
 client.login(TOKEN).catch((err) => {
   console.error("Discord login failed:", err);
   process.exit(1);
 });
+
 
 // ---------- Economy Listener -------
 client.on("messageCreate", (msg) => {
