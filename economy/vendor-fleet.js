@@ -4,7 +4,6 @@ import { getBalance, subBalance, addItem } from "./econ-core.js";
 import { Redis } from "@upstash/redis";
 const redis = Redis.fromEnv();
 
-// Price scale dropped. Added maxCharge (full battery units).
 export const CARS = [
   { alias: "voidrunner",  name: "Kessel Voidrunner",  year: 2037, price: 650,  range: "620 mi/charge",  maxCharge: 620,  features: ["Grav-stabilized chassis", "Adaptive HUD", "Silent glide"] },
   { alias: "stargo",      name: "Coruscant Stargo S", year: 2038, price: 900,  range: "710 mi/charge",  maxCharge: 710,  features: ["Metro autopilot+", "Neon aerofoil", "Holo-dash"] },
@@ -28,7 +27,7 @@ export const CARS = [
   { alias: "echelon",     name: "Echelon Crown",      year: 2041, price: 2000, range: "820 mi/charge",  maxCharge: 820,  features: ["Crown AI", "Royal cabin", "Auto valet"] },
 ];
 
-const OWN_KEY = (uid) => `fleet:owned:${uid}`;
+const OWN_KEY    = (uid) => `fleet:owned:${uid}`;
 const CHARGE_KEY = (uid, alias) => `fleet:charge:${uid}:${alias}`;
 
 const carByAlias = (alias) => CARS.find(c => c.alias === alias);
@@ -48,26 +47,24 @@ const carDetailEmbed = (car, charge = null) =>
       { name: "Features", value: car.features.map(f => `• ${f}`).join("\n") }
     )
     .setFooter({
-      text: charge != null
-        ? `Your current charge: ${charge}/${car.maxCharge}`
-        : "Buy to unlock charge tracking",
+      text: charge != null ? `Your current charge: ${charge}/${car.maxCharge}` : "Buy to unlock charge tracking",
     })
     .setColor("DarkRed");
 
 export async function onMessageCreate(msg) {
-  if (msg.author.bot || msg.__handled) return; // ← bail if someone else already responded
+  if (msg.author.bot || msg.__handled) return;
 
   const parts = msg.content.trim().split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
 
-  // List inventory
+  // Inventory
   if (cmd === "!car" || cmd === "!cars" || cmd === "!inventorycars") {
     await msg.channel.send({ embeds: [inventoryEmbed()] });
-    msg.__handled = true; // ← claim the message
+    msg.__handled = true;
     return;
   }
 
-  // Detail via dynamic alias command: !voidrunner etc.
+  // Car detail via alias (e.g., !voidrunner)
   if (cmd.startsWith("!")) {
     const alias = cmd.slice(1);
     const car = carByAlias(alias);
@@ -99,15 +96,12 @@ export async function onMessageCreate(msg) {
 
     await subBalance(msg.author.id, car.price);
     await redis.sadd(OWN_KEY(msg.author.id), alias);
-    await redis.set(CHARGE_KEY(msg.author.id, alias), car.maxCharge); // full on purchase
+    await redis.set(CHARGE_KEY(msg.author.id, alias), car.maxCharge);
     await addItem(msg.author.id, `Vehicle: ${car.name} (${car.year})`, 1);
 
     const e = new EmbedBuilder()
       .setTitle("🧾 Purchase Complete")
-      .setDescription(
-        `**${msg.author.username}** purchased **${car.name}** for **${car.price} DD**.\n` +
-        `Thanks for choosing Distorted Fleet Exports — enjoy the ride!`
-      )
+      .setDescription(`**${msg.author.username}** purchased **${car.name}** for **${car.price} DD**.\nThanks for choosing Distorted Fleet Exports — enjoy the ride!`)
       .setColor("DarkRed");
 
     await msg.channel.send({ embeds: [e] });
