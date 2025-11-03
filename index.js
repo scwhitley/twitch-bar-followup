@@ -95,7 +95,6 @@ const client = new Client({
   ],
   partials: [Partials.Channel, Partials.GuildMember, Partials.Message],
 });
-});
 
 // --- Unified dispatcher: route every message to each handler safely ---
 client.on("messageCreate", async (msg) => {
