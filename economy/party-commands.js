@@ -1,6 +1,6 @@
 // party-commands.js
 import { EmbedBuilder } from "discord.js";
-import { getPartySnapshot } from "./economy/party-core.js";
+import { getPartySnapshot } from "./party-core.js";
 
 function corBar(v) {
   const val = Math.max(0, Math.min(10, v|0));
