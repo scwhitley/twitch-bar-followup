@@ -29,10 +29,7 @@ import {
 } from "./traveler-confirm.js";
 
 // --------- Party + Workboard -------
-import {
-  onMessageCreate as onPartyMsg,
-  onInteractionCreate as onPartyIx
-} from "./economy/party-commands.js";
+import { onMessageCreate as onPartyMsg } from "./economy/party-commands.js";
 
 import {
   onMessageCreate as onWorkboardMsg,
@@ -132,7 +129,6 @@ client.on("interactionCreate", async (ix) => {
   await runI(onTravelerConfirmInt);
 
   // Party + Workboard interactions
-  await runI(onPartyIx);
   await runI(onWorkboardIx);
 });
 
