@@ -2,28 +2,40 @@
 import { Redis } from "@upstash/redis";
 const redis = Redis.fromEnv();
 
-// -------- Basic getters --------
+// ---------- Key helpers ----------
+const WALLET_KEY = (uid) => `wallet:${uid}`;
+const BANK_KEY   = (uid) => `bank:${uid}`;
+const INV_KEY    = (uid) => `econ:inv:${uid}`;
+
+// ---------- Basic getters ----------
 export async function getWallet(userId) {
-  return parseInt(await redis.get(`wallet:${userId}`)) || 0;
+  return parseInt(await redis.get(WALLET_KEY(userId))) || 0;
 }
 export async function getBank(userId) {
-  return parseInt(await redis.get(`bank:${userId}`)) || 0;
+  return parseInt(await redis.get(BANK_KEY(userId))) || 0;
 }
+// Backward-compat alias (some files use getBalance):
+export const getBalance = getWallet;
 
-// -------- Internal helpers --------
+// ---------- Internal setters (non-negative) ----------
 async function setWallet(userId, v) {
   if (v < 0) throw new Error("Wallet would go negative");
-  await redis.set(`wallet:${userId}`, v);
+  await redis.set(WALLET_KEY(userId), v);
 }
 async function setBank(userId, v) {
   if (v < 0) throw new Error("Bank would go negative");
-  await redis.set(`bank:${userId}`, v);
+  await redis.set(BANK_KEY(userId), v);
 }
 
+// ---------- Locking + de-dupe ----------
 async function withLock(key, ttlSec, fn) {
   const ok = await redis.set(key, "1", { nx: true, ex: ttlSec });
   if (!ok) throw new Error("Busy, try again");
-  try { return await fn(); } finally { await redis.del(key); }
+  try {
+    return await fn();
+  } finally {
+    await redis.del(key);
+  }
 }
 
 export async function deDupeGuard(id, ttlSec = 60) {
@@ -32,7 +44,7 @@ export async function deDupeGuard(id, ttlSec = 60) {
   return !!ok; // true if first time
 }
 
-// -------- Safe credits/debits (wallet only) --------
+// ---------- Safe credits/debits (wallet only) ----------
 export async function addBalance(userId, amount) {
   if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid amount");
   const key = `lock:user:${userId}`;
@@ -56,7 +68,7 @@ export async function subBalance(userId, amount) {
   });
 }
 
-// -------- Atomic transfers: wallet <-> bank --------
+// ---------- Atomic transfers: wallet <-> bank ----------
 export async function deposit(userId, amount) {
   if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid amount");
   const key = `lock:user:${userId}`;
@@ -81,4 +93,28 @@ export async function withdraw(userId, amount) {
     await setWallet(userId, w + amount);
     return { wallet: w + amount, bank: b - amount };
   });
+}
+
+// ---------- Inventory (hash per user) ----------
+/** Returns { "Item Name": qty, ... } */
+export async function getInventory(userId) {
+  const raw = await redis.hgetall(INV_KEY(userId));
+  if (!raw) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) out[k] = Number(v) || 0;
+  return out;
+}
+
+/** Increment an item (can be negative). Returns new qty; deletes on 0/neg. */
+export async function addItem(userId, itemName, qty = 1) {
+  if (!itemName || typeof itemName !== "string") throw new Error("Invalid item name");
+  if (!Number.isInteger(qty) || qty === 0) throw new Error("Invalid quantity");
+  const n = await redis.hincrby(INV_KEY(userId), itemName, qty);
+  if (n <= 0) await redis.hdel(INV_KEY(userId), itemName);
+  return n;
+}
+
+/** Backward-compat alias if any file still imports listInventory */
+export async function listInventory(userId) {
+  return getInventory(userId);
 }
