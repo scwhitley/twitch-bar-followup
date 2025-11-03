@@ -22,7 +22,7 @@ const QUIPS = [
   "“Chorus forbid we lift a finger without a montage.”",
   "“Aight, we’ll just pay full price for failure then.”",
   "“I’ll tell the client you were emotionally unavailable.”",
-  "“Great plan: do nothing and pray to RNGesus.”",
+  "“Great plan: do nothing and pray to D4rth Distortion.””,
   "“Nice—hard pass with the confidence of a Warden audit.”",
   "“I’ll invoice the Luminous Void for your time. Net-30 eternities.”",
   "“The Hollow Expanse called; it wants its excuses back.”",
@@ -31,8 +31,73 @@ const QUIPS = [
   "“If bravery were a currency, you’d still be overdrawn.”",
   "“I’ll just add this to the ‘Character Development Missed’ pile.”",
   "“Sick. Let’s circle back in an alternate timeline.”"
-
 ];
+
+// ---- Channel enforcement (ID-first) -----------------------------------------
+/**
+ * Put your channel IDs here. IDs must be strings.
+ * You can also set them via env if you prefer:
+ *   process.env.CH_OBSIDIAN_REACH, etc.
+ */
+const CHANNELS = {
+  OBSIDIAN: process.env.CH_OBSIDIAN_REACH    || "1434797542255759391",
+  HE:       process.env.CH_HALLOWED_EXPANSE  || "1434797296272412762",
+  VV:       process.env.CH_VERDENT_VERGE     || "1434797666037923891", // your spelling
+  LV:       process.env.CH_LUMINOUS_VOID     || "1434797905776087170",
+};
+
+// Which channels each poolKey is allowed in. Use IDs above.
+const ALLOWED = {
+  // City hubs → Obsidian Reach only
+  bar:   [CHANNELS.OBSIDIAN],
+  hotel: [CHANNELS.OBSIDIAN],
+  casino:[CHANNELS.OBSIDIAN],
+  market:[CHANNELS.OBSIDIAN],
+  vault: [CHANNELS.OBSIDIAN],
+
+  // Regions
+  he:    [CHANNELS.HE],
+  vv:    [CHANNELS.VV],
+  lv:    [CHANNELS.LV],
+
+  // Sidequests → anywhere
+  side:  null,
+};
+
+/**
+ * ID-first check. If ALLOWED[poolKey] is null/empty → allowed anywhere.
+ * We also soft-fallback to name match if someone pasted names instead of IDs.
+ */
+function channelAllowedFor(poolKey, channel) {
+  const allow = ALLOWED[poolKey];
+  if (!allow || allow.length === 0) return true;
+  const chId = String(channel?.id || "");
+  const chName = String(channel?.name || "").toLowerCase();
+  return allow.some((entry) => {
+    const s = String(entry || "");
+    if (/^\d{16,}$/.test(s)) return s === chId;        // looks like an ID → compare IDs
+    return s.toLowerCase() === chName;                 // fallback name compare
+  });
+}
+
+/** pretty target to show in “wrong channel” error */
+function targetChannelMention(poolKey) {
+  const map = {
+    he:    CHANNELS.HE,
+    vv:    CHANNELS.VV,
+    lv:    CHANNELS.LV,
+    bar:   CHANNELS.OBSIDIAN,
+    hotel: CHANNELS.OBSIDIAN,
+    casino:CHANNELS.OBSIDIAN,
+    market:CHANNELS.OBSIDIAN,
+    vault: CHANNELS.OBSIDIAN,
+  };
+  const id = map[poolKey];
+  return id ? `<#${id}>` : "the correct channel";
+}
+// ----------------------------------------------------------------------------
+
+// ----------------------------------------------------------------------------
 
 function jobEmbed(placeLabel, job, payout, durationMin) {
   return new EmbedBuilder()
@@ -48,6 +113,16 @@ function jobEmbed(placeLabel, job, payout, durationMin) {
 }
 
 async function startWork(msg, poolKey, placeLabel) {
+  // Channel gate
+  if (!channelAllowedFor(poolKey, msg.channel)) {
+    let where = "the correct channel";
+    if (poolKey === "he") where = "#hallowed-expanse";
+    else if (poolKey === "vv") where = "#verdent-verge";
+    else if (poolKey === "lv") where = "#luminous-void";
+    else if (["bar","hotel","casino","market","vault"].includes(poolKey)) where = "#obsidian-reach";
+    return msg.reply(`🚫 That contract can only be started in **${where}**.`);
+  }
+
   const list = JOBS[poolKey] || [];
   if (!list.length) return msg.reply("No contracts available here right now.");
   const job = list[Math.floor(Math.random() * list.length)];
@@ -81,12 +156,14 @@ export async function onMessageCreate(msg) {
   if (msg.author.bot) return;
   const cmd = (msg.content || "").trim().toLowerCase();
 
-  // City
+  // City (only #obsidian-reach)
   if (cmd === "!workbar")     return startWork(msg, "bar", "Stirred Veil");
   if (cmd === "!workhotel")   return startWork(msg, "hotel", "Hotel Luxorion");
   if (cmd === "!workcasino")  return startWork(msg, "casino", "Distorted Casino");
   if (cmd === "!workvault")   return startWork(msg, "vault", "Vault 7");
   if (cmd === "!workmarket")  return startWork(msg, "market", "Shadow Market");
+
+  // Sidequests (anywhere)
   if (cmd === "!sidequest")   return startWork(msg, "side", "World Side Quest");
 
   // Regions
@@ -124,7 +201,7 @@ export async function onInteractionCreate(interaction) {
   if (kind === "acc") {
     const payout = parseInt(payoutStr, 10) || 0;
     const dur = parseInt(durStr, 10) || 30;
-    await getParty(g); // fetched but unused here; keep if you later split per member
+    await getParty(g); // reserved for future split logic
 
     const after = await addPartyFunds(g, payout);
     const e = new EmbedBuilder()
