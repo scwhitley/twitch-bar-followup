@@ -22,6 +22,17 @@ import {
   onInteractionCreate as onTravelerInteraction,
 } from "./traveler-command.js";
 
+// --------- Party + Workboard -------
+import {
+  onMessageCreate as onPartyMsg,
+  onInteractionCreate as onPartyIx
+} from "./economy/party-commands.js";
+
+import {
+  onMessageCreate as onWorkboardMsg,
+  onInteractionCreate as onWorkboardIx
+} from "./economy/workboard.js";
+
 // ---------- Jobs ----------
 import {
   onMessageCreate as onJobMsg,
@@ -90,9 +101,9 @@ const client = new Client({
 // --- Unified dispatcher: route every message to each handler safely ---
 client.on("messageCreate", async (msg) => {
   const run = async (fn) => { try { await fn?.(msg); } catch (e) { console.error("[handler error]", fn?.name, e); } };
-
   await run(onTravelerMsg); 
-  await run(onJobMsg, "jobs");
+  await run(onPartyMsg);
+  await run(onWorkboardMsg);
   await run(onWorkMsg, "work");
   await run(onBarMsg, "bar");
   await run(onBankMsg, "bank");
@@ -100,11 +111,13 @@ client.on("messageCreate", async (msg) => {
   await run(onAdminEconMsg, "admin-econ");
 });
 
-client.on("interactionCreate", async (interaction) => {
-  const runI = async (fn) => { try { await fn?.(interaction); } catch (e) { console.error("[interaction error]", fn?.name, e); } };
+client.on("interactionCreate", async (ix) => {
+  const runI = async (fn) => { try { await fn?.(ix); } catch (e) { console.error("[interaction error]", fn?.name, e); } };
 
   await runI(onTravelerInteraction); // ✅ new traveler buttons
   await runI(onJobInteraction, "job-interaction");
+  await runI(onPartyIx);
+  await runI(onWorkboardIx);
 });
 
 // One ready log (use once to avoid dupes on hot-reload)
