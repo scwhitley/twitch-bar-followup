@@ -22,6 +22,12 @@ import {
   onInteractionCreate as onBackstoryInteraction,
 } from "./backstory-command.js";
 
+// --------- Traveler Creation --------
+import {
+  onMessageCreate as onTravelerMsg,
+  onInteractionCreate as onTravelerInteraction,
+} from "./traveler-command.js";
+
 // ---------- Jobs ----------
 import {
   onMessageCreate as onJobMsg,
@@ -91,13 +97,10 @@ const client = new Client({
 
 // --- Unified dispatcher: route every message to each handler safely ---
 client.on("messageCreate", async (msg) => {
-  // If a handler processes the message, it should set msg.__handled = true
-  const run = async (fn, label) => {
-    if (msg.__handled) return; // short-circuit
-    try { await fn?.(msg); } catch (e) { console.error("[handler error]", label, e); }
-  };
+  const run = async (fn) => { try { await fn?.(msg); } catch (e) { console.error("[handler error]", fn?.name, e); } };
 
   await run(onBackstoryMsg, "backstory");
+  await run(onTravelerMsg); 
   await run(onJobMsg, "jobs");
   await run(onWorkMsg, "work");
   await run(onPantryMsg, "pantry");
@@ -111,10 +114,9 @@ client.on("messageCreate", async (msg) => {
 });
 
 client.on("interactionCreate", async (interaction) => {
-  const runI = async (fn, label) => {
-    try { await fn?.(interaction); } catch (e) { console.error("[interaction error]", label, e); }
-  };
+  const runI = async (fn) => { try { await fn?.(interaction); } catch (e) { console.error("[interaction error]", fn?.name, e); } };
 
+  await runI(onTravelerInteraction); // ✅ new traveler buttons
   await runI(onBackstoryInteraction, "backstory-interaction");
   await runI(onJobInteraction, "job-interaction");
 });
