@@ -1,7 +1,8 @@
 // traveler-tables.js
 export const REROLLABLE_FIELDS = [
   "name", "race", "class", "affinity", "emotion_trigger", "manifestation",
-  "faction", "region", "corruption_level"
+  "faction", "region", "corruption_level",
+  "age", "personality", "color_variation", "physical_traits"
 ];
 
 // Lore tables (trimmed for brevity; expand anytime)
@@ -57,4 +58,79 @@ export const FACTIONS = [
   { key:"none",    label:"Unaffiliated",  perk:"Unclaimed — freedom and suspicion." },
 ];
 
+// Race metadata for age + appearance.
+// age: { adultMin, adultMax } = roll between these at creation
+// colors: strings flavored to the race
+// traits: short physical descriptors; we’ll sample 2–3 for flavor
+export const RACE_META = {
+  Human: {
+    age: { adultMin: 18, adultMax: 60 },
+    colors: ["warm tan", "olive", "light umber", "russet", "pearl", "bronze"],
+    traits: ["scarred knuckles", "storm-gray eyes", "freckled cheekbones", "broad shoulders", "runner’s calves", "old training calluses"],
+  },
+  Veydrin: {
+    age: { adultMin: 30, adultMax: 140 },
+    colors: ["ashen blue skin", "smoky lilac hue", "dusk-gray", "moon-pale", "ink-dark sclera"],
+    traits: ["angular cheek ridges", "vein-glow at temples", "soft bioluminescent freckles", "knife-straight posture"],
+  },
+  Elyndari: {
+    age: { adultMin: 25, adultMax: 180 },
+    colors: ["leaf-green undertone", "gold-veined skin", "moss-cool tint", "sun-kissed bark-brown"],
+    traits: ["vine-like hair filaments", "petal-thin ears", "pollen-dust lashes", "sap-sweet scent"],
+  },
+  Torrin: {
+    age: { adultMin: 20, adultMax: 90 },
+    colors: ["basalt gray", "iron slate", "cinder speckle", "charcoal banding"],
+    traits: ["stone-dense frame", "mineral flecks in skin", "grounded stance", "hammer-broad hands"],
+  },
+  Seraphite: {
+    age: { adultMin: 22, adultMax: 120 },
+    colors: ["opalescent glow", "porcelain pale", "halo-sheen", "silver blush"],
+    traits: ["faint crown-ring light", "wing-scar vestiges", "voice with bell overtones", "feather-grain hair"],
+  },
+  Gryndal: {
+    age: { adultMin: 16, adultMax: 55 },
+    colors: ["russet hide", "umber plates", "sand mottling", "coal stripes"],
+    traits: ["horn nubs", "ridged forearms", "predator-calm gaze", "tail flick tell"],
+  },
+  Noctari: {
+    age: { adultMin: 18, adultMax: 100 },
+    colors: ["void-black sheen", "blue-black velvet", "starlit speckling", "indigo undertone"],
+    traits: ["wide night-dilated pupils", "soft light-absorbent hair", "shadow-lean build", "echo-soft steps"],
+  },
+  Korrvex: {
+    age: { adultMin: 28, adultMax: 160 },
+    colors: ["obsidian glass tone", "volcanic red veining", "cracked lava pattern", "smoke-matte finish"],
+    traits: ["heat-scored scars", "ember-glow eyes", "steady furnace breath", "forge-scarred palms"],
+  },
+  Mirrion: {
+    age: { adultMin: 24, adultMax: 110 },
+    colors: ["mirror-sheen patches", "chrome freckles", "polished silver tone", "liquid-steel gleam"],
+    traits: ["reflective cheek panes", "prism-split irises", "metronome-steady blink", "immaculate grooming"],
+  },
+  Vaelborn: {
+    age: { adultMin: 20, adultMax: 130 },
+    colors: ["twilight violet", "dusky rose", "horizon gold", "storm teal"],
+    traits: ["constellation birthmark", "sigh-soft voice", "long pianist fingers", "distant-sky eyes"],
+  },
+  Dravari: {
+    age: { adultMin: 26, adultMax: 150 },
+    colors: ["ember-kissed bronze", "blackened copper", "pyre-red glow", "smolder-auburn"],
+    traits: ["ash-dust lashes", "smoke-curl hair", "coal-smudge fingertips", "embers in the breath"],
+  },
+  Aetherkin: {
+    age: { adultMin: 18, adultMax: 200 },
+    colors: ["aether-blue veins", "glass-pale dermis", "haze-white glow", "prism aura"],
+    traits: ["gravity-light step", "hair moving with no wind", "tone that harmonizes rooms", "eyes that catch static"],
+  },
+};
+
 export const START_CORRUPTION = [0,1,2,3]; // creation band
+// Personality pool (bigger, flavorful, Codex-aligned vibe)
+export const PERSONALITY_POOL = [
+  "calculating", "loyal", "stoic", "blunt truth-teller", "charismatic", "ruthless",
+  "dryly sarcastic", "quiet observer", "methodical planner", "recklessly curious",
+  "calm strategist", "hot-headed but brave", "charming negotiator", "relentless perfectionist",
+  "soft-spoken empath", "street-smart skeptic", "chaotic-good gremlin", "by-the-book operator",
+  "patient opportunist", "melancholy romantic", "cold pragmatist", "shameless hype-beast",
+];
