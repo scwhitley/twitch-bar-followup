@@ -2,32 +2,28 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { REROLLABLE_FIELDS } from "./traveler-tables.js";
 import { getProfile, saveProfile, wipeProfile, audit, shortCooldown, sign, verify } from "./traveler-store.js";
-import { createProfile as createDoc, renderEmbedData as renderDoc, rerollField as rerollDoc } from "./traveler-builder.js";
+import {
+  createProfile as createDoc,
+  renderEmbedData as renderDoc,
+  rerollField as rerollDoc,
+  migrateProfile
+} from "./traveler-builder.js";
+
+function labelOf(f) {
+  return f.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
 
 // Build buttons (locks deactivate)
 function buildButtons(profile, userId) {
-  const row = new ActionRowBuilder();
-  for (const f of REROLLABLE_FIELDS.slice(0, 5)) {
-    const locked = profile.locks?.[f] || (profile.rerolls?.[f] ?? 0) <= 0;
-    const idCore = `trav:rr|uid=${userId}|field=${f}`;
-    const sig = sign(idCore);
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`${idCore}|sig=${sig}`)
-        .setLabel(locked ? `🔒 ${labelOf(f)}` : `🎲 Reroll ${labelOf(f)}`)
-        .setStyle(locked ? ButtonStyle.Secondary : ButtonStyle.Primary)
-        .setDisabled(locked)
-    );
-  }
-  const rest = REROLLABLE_FIELDS.slice(5);
-  const rows = [row];
-  if (rest.length) {
-    const row2 = new ActionRowBuilder();
-    for (const f of rest) {
+  const rows = [];
+  const chunk = (arr, n) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i*n, i*n+n));
+  for (const slice of chunk(REROLLABLE_FIELDS, 5)) {
+    const row = new ActionRowBuilder();
+    for (const f of slice) {
       const locked = profile.locks?.[f] || (profile.rerolls?.[f] ?? 0) <= 0;
       const idCore = `trav:rr|uid=${userId}|field=${f}`;
       const sig = sign(idCore);
-      row2.addComponents(
+      row.addComponents(
         new ButtonBuilder()
           .setCustomId(`${idCore}|sig=${sig}`)
           .setLabel(locked ? `🔒 ${labelOf(f)}` : `🎲 Reroll ${labelOf(f)}`)
@@ -35,13 +31,9 @@ function buildButtons(profile, userId) {
           .setDisabled(locked)
       );
     }
-    rows.push(row2);
+    rows.push(row);
   }
   return rows;
-}
-
-function labelOf(f) {
-  return f.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
 // ---------- MESSAGE COMMANDS ----------
@@ -54,17 +46,25 @@ export async function onMessageCreate(msg) {
   const isOur =
     cmd === "!traveler" || cmd === "!trav" ||
     cmd === "!travreset" || cmd === "!travwipe" ||
-    cmd === "!travgrant" || cmd === "!travsheet" || cmd === "!travexport";
+    cmd === "!travgrant" || cmd === "!travsheet" || cmd === "!travexport" ||
+    cmd === "!ping";
 
   if (!isOur) return;
   msg.__handled = true;
 
   const uid = msg.author.id;
 
+  if (cmd === "!ping") {
+    return void msg.reply("pong");
+  }
+
   if (cmd === "!traveler" || cmd === "!trav") {
     let prof = await getProfile(uid);
     if (!prof) {
       prof = createDoc(uid, {});
+      await saveProfile(uid, prof);
+    } else {
+      migrateProfile(prof);
       await saveProfile(uid, prof);
     }
     const data = renderDoc(prof);
@@ -79,6 +79,9 @@ export async function onMessageCreate(msg) {
   if (cmd === "!travsheet") {
     const prof = await getProfile(uid);
     if (!prof) return void msg.reply("No traveler yet. Use `!traveler`.");
+    migrateProfile(prof);
+    await saveProfile(uid, prof);
+
     const data = renderDoc(prof);
     const embed = new EmbedBuilder()
       .setTitle(data.title).addFields(...data.fields)
@@ -91,6 +94,8 @@ export async function onMessageCreate(msg) {
   if (cmd === "!travexport") {
     const prof = await getProfile(uid);
     if (!prof) return void msg.reply("No traveler yet. Use `!traveler`.");
+    migrateProfile(prof);
+    await saveProfile(uid, prof);
     const json = "```json\n" + JSON.stringify(prof, null, 2) + "\n```";
     await msg.channel.send(json);
     return;
@@ -150,7 +155,7 @@ export async function onInteractionCreate(interaction) {
   // Validate signature
   if (!verify(idCore, parts.sig || "")) {
     return void interaction.reply({ content: "Signature mismatch.", ephemeral: true });
-    }
+  }
 
   // Only owner can reroll
   if (interaction.user.id !== uid) {
@@ -163,13 +168,14 @@ export async function onInteractionCreate(interaction) {
     return void interaction.reply({ content: `Cool down… ${cd}s`, ephemeral: true });
   }
 
-  // Load and try reroll
+  // Load, migrate, reroll, save
   const prof = await getProfile(uid);
   if (!prof) {
     return void interaction.reply({ content: "No traveler yet. Use `!traveler`.", ephemeral: true });
   }
 
   try {
+    migrateProfile(prof);
     const result = rerollDoc(uid, prof, field);
     await audit(uid, result);
     await saveProfile(uid, prof);
