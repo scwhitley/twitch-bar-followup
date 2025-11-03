@@ -22,7 +22,6 @@ const QUIPS = [
   "“Chorus forbid we lift a finger without a montage.”",
   "“Aight, we’ll just pay full price for failure then.”",
   "“I’ll tell the client you were emotionally unavailable.”",
-  "“Great plan: do nothing and pray to D4rth Distortion.””,
   "“Nice—hard pass with the confidence of a Warden audit.”",
   "“I’ll invoice the Luminous Void for your time. Net-30 eternities.”",
   "“The Hollow Expanse called; it wants its excuses back.”",
