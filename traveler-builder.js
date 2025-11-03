@@ -144,10 +144,62 @@ export function rerollField(userId, profile, field) {
   profile[field] = next;
   profile.rerolls[field] = 0;
   profile.locks[field] = true;
+  profile.updatedAt = Date.now();
   return { from: oldVal, to: next, field };
 }
 
-// Pretty embed text
+// ---------- migration for old saves ----------
+function regionByLabel(label) {
+  return REGIONS.find(r => r.label === label) || REGIONS[0];
+}
+
+export function migrateProfile(profile) {
+  const rng = makeRng(seedFrom(profile.seed || "seed", "migrate", String(Date.now())));
+
+  const want = [
+    "name","race","class","affinity","emotion_trigger","manifestation",
+    "faction","region","corruption_level",
+    "age","personality","color_variation","physical_traits"
+  ];
+  profile.rerolls = profile.rerolls || {};
+  profile.locks   = profile.locks   || {};
+  for (const k of want) {
+    if (!(k in profile.rerolls)) profile.rerolls[k] = 1;
+    if (!(k in profile.locks))   profile.locks[k]   = false;
+  }
+
+  if (!profile.region_trait) {
+    const r = regionByLabel(profile.region);
+    profile.region_trait = r?.trait || "resourceful locals";
+  }
+
+  const meta = (RACE_META[profile.race] || RACE_META.Human);
+  if (profile.age == null) {
+    const { adultMin, adultMax } = meta.age || { adultMin: 18, adultMax: 60 };
+    const span = Math.max(0, (adultMax ?? 60) - (adultMin ?? 18));
+    profile.age = (adultMin ?? 18) + Math.floor(rng() * (span + 1));
+  }
+  if (!profile.personality) {
+    profile.personality = pick(rng, PERSONALITY_POOL);
+  }
+  if (!profile.color_variation) {
+    const colors = meta.colors || ["neutral tone"];
+    profile.color_variation = pick(rng, colors);
+  }
+  if (!profile.physical_traits || !Array.isArray(profile.physical_traits) || profile.physical_traits.length === 0) {
+    const traits = [...(meta.traits || ["plain features"])];
+    const out = [];
+    while (out.length < 2 && traits.length) {
+      out.push(traits.splice(Math.floor(rng()*traits.length),1)[0]);
+    }
+    profile.physical_traits = out;
+  }
+
+  profile.updatedAt = Date.now();
+  return profile;
+}
+
+// ---------- embed renderer ----------
 export function renderEmbedData(profile) {
   const rareFlag = /Dread Apostle/i.test(profile.class) ? " ⚠️" : "";
   const footerRerolls =
@@ -155,22 +207,23 @@ export function renderEmbedData(profile) {
       .map(([k,v]) => `${k.replace(/_/g," ")}(${v})`)
       .join(" • ");
 
-  const phys = Array.isArray(profile.physical_traits) ? profile.physical_traits.slice(0,2).join("; ") : String(profile.physical_traits || "");
+  const phys = Array.isArray(profile.physical_traits)
+    ? profile.physical_traits.slice(0,2).join("; ")
+    : String(profile.physical_traits || "");
 
   return {
-    title: `Traveler: ${profile.name} — ${profile.race} · ${profile.class}${rareFlag}`,
+    title: `Traveler: ${profile.name || "Unknown"} — ${profile.race || "—"} · ${profile.class || "—"}${rareFlag}`,
     fields: [
-      { name: "Faction", value: profile.faction, inline: true },
-      { name: "Region",  value: `${profile.region}\n*${profile.region_trait}*`, inline: true },
-      { name: "Affinity", value: `${profile.affinity}`, inline: true },
-      { name: "Emotion Trigger", value: profile.emotion_trigger, inline: true },
-      { name: "Manifestation", value: profile.manifestation, inline: true },
-      { name: "Corruption", value: String(profile.corruption_level), inline: true },
+      { name: "Faction", value: String(profile.faction ?? "—"), inline: true },
+      { name: "Region",  value: `${profile.region || "—"}\n*${profile.region_trait || "—"}*`, inline: true },
+      { name: "Affinity", value: String(profile.affinity ?? "—"), inline: true },
+      { name: "Emotion Trigger", value: String(profile.emotion_trigger ?? "—"), inline: true },
+      { name: "Manifestation", value: String(profile.manifestation ?? "—"), inline: true },
+      { name: "Corruption", value: String(profile.corruption_level ?? "—"), inline: true },
 
-      // NEW block
-      { name: "Age", value: String(profile.age), inline: true },
-      { name: "Personality", value: profile.personality, inline: true },
-      { name: "Color Variation", value: profile.color_variation, inline: true },
+      { name: "Age", value: String(profile.age ?? "—"), inline: true },
+      { name: "Personality", value: String(profile.personality ?? "—"), inline: true },
+      { name: "Color Variation", value: String(profile.color_variation ?? "—"), inline: true },
       { name: "Physical Traits", value: phys || "—", inline: false },
     ],
     footer: `Seed ${profile.seed} — Rerolls left: ${footerRerolls}`,
