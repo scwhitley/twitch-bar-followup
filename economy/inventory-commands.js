@@ -1,5 +1,5 @@
 // economy/inventory-commands.js
-import { listInventory } from "./econ-core.js";
+import { getInventory } from "./econ-core.js";
 import { EmbedBuilder } from "discord.js";
 
 export async function onMessageCreate(msg) {
@@ -10,7 +10,7 @@ export async function onMessageCreate(msg) {
   const cmd = (parts[0] || "").toLowerCase();
   if (cmd !== "!inventory" && cmd !== "!inv") return;
 
-  const inv = await listInventory(msg.author.id);
+  const inv = await getInventory(msg.author.id);
 
   if (!inv || !Object.keys(inv).length) {
     await msg.reply("Your inventory is empty. Go shopping!");
