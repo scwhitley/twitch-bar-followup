@@ -136,13 +136,9 @@ client.login(TOKEN).catch((err) => {
 client.on("messageCreate", (msg) => {
   onBankMsg(msg);
   onInventoryMsg(msg);
-  onPantryMsg(msg);
   onAdminEconMsg(msg);
   onWorkMsg(msg);
   onBarMsg(msg);
-  onFleetMsg(msg);
-  onRealityMsg(msg);
-  onFleetChargeMsg(msg); // 🔋 charge system
 });
 
 // ---------- Award log (shared) ----------
