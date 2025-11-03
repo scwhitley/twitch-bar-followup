@@ -16,12 +16,6 @@ import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { LOVE_TIERS } from "./love-tiers.js";
 import { DUEL_ROASTS, RALLY_LINES, BAR_EVENTS, INVASION_STARTS } from "./faction-text.js";
 
-// ---------- Backstory ----------
-import {
-  onMessageCreate as onBackstoryMsg,
-  onInteractionCreate as onBackstoryInteraction,
-} from "./backstory-command.js";
-
 // --------- Traveler Creation --------
 import {
   onMessageCreate as onTravelerMsg,
@@ -101,7 +95,6 @@ client.on("messageCreate", async (msg) => {
   const run = async (fn) => { try { await fn?.(msg); } catch (e) { console.error("[handler error]", fn?.name, e); } };
 
   await run(onTravelerMsg); 
-  await run(onBackstoryMsg, "backstory");
   await run(onJobMsg, "jobs");
   await run(onWorkMsg, "work");
   await run(onPantryMsg, "pantry");
@@ -118,7 +111,6 @@ client.on("interactionCreate", async (interaction) => {
   const runI = async (fn) => { try { await fn?.(interaction); } catch (e) { console.error("[interaction error]", fn?.name, e); } };
 
   await runI(onTravelerInteraction); // ✅ new traveler buttons
-  await runI(onBackstoryInteraction, "backstory-interaction");
   await runI(onJobInteraction, "job-interaction");
 });
 
