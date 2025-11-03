@@ -1,47 +1,84 @@
+// economy/econ-core.js
 import { Redis } from "@upstash/redis";
 const redis = Redis.fromEnv();
 
-// Keys
-const BAL = (id) => `econ:balance:${id}`;
-const BANK = (id) => `econ:bank:${id}`;
-const INV = (id) => `econ:inv:${id}`;
-
-export async function getBalance(id) {
-  return parseInt(await redis.get(BAL(id))) || 0;
+// -------- Basic getters --------
+export async function getWallet(userId) {
+  return parseInt(await redis.get(`wallet:${userId}`)) || 0;
 }
-export async function addBalance(id, amt) {
-  return await redis.incrby(BAL(id), amt);
-}
-export async function subBalance(id, amt) {
-  const bal = await getBalance(id);
-  if (bal < amt) throw new Error("Insufficient funds");
-  return await redis.decrby(BAL(id), amt);
+export async function getBank(userId) {
+  return parseInt(await redis.get(`bank:${userId}`)) || 0;
 }
 
-export async function getBank(id) {
-  return parseInt(await redis.get(BANK(id))) || 0;
+// -------- Internal helpers --------
+async function setWallet(userId, v) {
+  if (v < 0) throw new Error("Wallet would go negative");
+  await redis.set(`wallet:${userId}`, v);
 }
-export async function deposit(id, amt) {
-  await subBalance(id, amt);
-  await redis.incrby(BANK(id), amt);
-}
-export async function withdraw(id, amt) {
-  const b = await getBank(id);
-  if (b < amt) throw new Error("Insufficient bank funds");
-  await redis.decrby(BANK(id), amt);
-  await addBalance(id, amt);
+async function setBank(userId, v) {
+  if (v < 0) throw new Error("Bank would go negative");
+  await redis.set(`bank:${userId}`, v);
 }
 
-// inventory helpers
-export async function addItem(id, item, qty = 1) {
-  await redis.hincrby(INV(id), item, qty);
+async function withLock(key, ttlSec, fn) {
+  const ok = await redis.set(key, "1", { nx: true, ex: ttlSec });
+  if (!ok) throw new Error("Busy, try again");
+  try { return await fn(); } finally { await redis.del(key); }
 }
-export async function subItem(id, item, qty = 1) {
-  const cur = parseInt(await redis.hget(INV(id), item)) || 0;
-  if (cur < qty) throw new Error("Not enough items");
-  if (cur === qty) await redis.hdel(INV(id), item);
-  else await redis.hincrby(INV(id), item, -qty);
+
+export async function deDupeGuard(id, ttlSec = 60) {
+  if (!id) return false;
+  const ok = await redis.set(`seen:${id}`, "1", { nx: true, ex: ttlSec });
+  return !!ok; // true if first time
 }
-export async function listInventory(id) {
-  return (await redis.hgetall(INV(id))) || {};
+
+// -------- Safe credits/debits (wallet only) --------
+export async function addBalance(userId, amount) {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid amount");
+  const key = `lock:user:${userId}`;
+  return await withLock(key, 5, async () => {
+    const before = await getWallet(userId);
+    const after = before + amount;
+    await setWallet(userId, after);
+    return after;
+  });
+}
+
+export async function subBalance(userId, amount) {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid amount");
+  const key = `lock:user:${userId}`;
+  return await withLock(key, 5, async () => {
+    const before = await getWallet(userId);
+    if (before < amount) throw new Error("Insufficient wallet funds");
+    const after = before - amount;
+    await setWallet(userId, after);
+    return after;
+  });
+}
+
+// -------- Atomic transfers: wallet <-> bank --------
+export async function deposit(userId, amount) {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid amount");
+  const key = `lock:user:${userId}`;
+  return await withLock(key, 5, async () => {
+    const w = await getWallet(userId);
+    const b = await getBank(userId);
+    if (w < amount) throw new Error("Insufficient wallet funds");
+    await setWallet(userId, w - amount);
+    await setBank(userId, b + amount);
+    return { wallet: w - amount, bank: b + amount };
+  });
+}
+
+export async function withdraw(userId, amount) {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid amount");
+  const key = `lock:user:${userId}`;
+  return await withLock(key, 5, async () => {
+    const w = await getWallet(userId);
+    const b = await getBank(userId);
+    if (b < amount) throw new Error("Insufficient bank funds");
+    await setBank(userId, b - amount);
+    await setWallet(userId, w + amount);
+    return { wallet: w + amount, bank: b - amount };
+  });
 }
