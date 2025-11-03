@@ -1,14 +1,13 @@
 // traveler-command.js
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { REROLLABLE_FIELDS } from "./traveler-tables.js";
-import { createProfile, getProfileText, renderEmbedData, rerollField } from "./_shim.js"; // ignore; see below
 import { getProfile, saveProfile, wipeProfile, audit, shortCooldown, sign, verify } from "./traveler-store.js";
 import { createProfile as createDoc, renderEmbedData as renderDoc, rerollField as rerollDoc } from "./traveler-builder.js";
 
 // Build buttons (locks deactivate)
 function buildButtons(profile, userId) {
   const row = new ActionRowBuilder();
-  for (const f of REROLLABLE_FIELDS) {
+  for (const f of REROLLABLE_FIELDS.slice(0, 5)) {
     const locked = profile.locks?.[f] || (profile.rerolls?.[f] ?? 0) <= 0;
     const idCore = `trav:rr|uid=${userId}|field=${f}`;
     const sig = sign(idCore);
@@ -19,24 +18,26 @@ function buildButtons(profile, userId) {
         .setStyle(locked ? ButtonStyle.Secondary : ButtonStyle.Primary)
         .setDisabled(locked)
     );
-    if (row.components.length === 5) break; // Discord row cap; we’ll send 2 rows
   }
-  // Second row if needed
   const rest = REROLLABLE_FIELDS.slice(5);
-  const row2 = new ActionRowBuilder();
-  for (const f of rest) {
-    const locked = profile.locks?.[f] || (profile.rerolls?.[f] ?? 0) <= 0;
-    const idCore = `trav:rr|uid=${userId}|field=${f}`;
-    const sig = sign(idCore);
-    row2.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`${idCore}|sig=${sig}`)
-        .setLabel(locked ? `🔒 ${labelOf(f)}` : `🎲 Reroll ${labelOf(f)}`)
-        .setStyle(locked ? ButtonStyle.Secondary : ButtonStyle.Primary)
-        .setDisabled(locked)
-    );
+  const rows = [row];
+  if (rest.length) {
+    const row2 = new ActionRowBuilder();
+    for (const f of rest) {
+      const locked = profile.locks?.[f] || (profile.rerolls?.[f] ?? 0) <= 0;
+      const idCore = `trav:rr|uid=${userId}|field=${f}`;
+      const sig = sign(idCore);
+      row2.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${idCore}|sig=${sig}`)
+          .setLabel(locked ? `🔒 ${labelOf(f)}` : `🎲 Reroll ${labelOf(f)}`)
+          .setStyle(locked ? ButtonStyle.Secondary : ButtonStyle.Primary)
+          .setDisabled(locked)
+      );
+    }
+    rows.push(row2);
   }
-  return rest.length ? [row, row2] : [row];
+  return rows;
 }
 
 function labelOf(f) {
@@ -63,7 +64,7 @@ export async function onMessageCreate(msg) {
   if (cmd === "!traveler" || cmd === "!trav") {
     let prof = await getProfile(uid);
     if (!prof) {
-      prof = createDoc(uid, {}); // from builder
+      prof = createDoc(uid, {});
       await saveProfile(uid, prof);
     }
     const data = renderDoc(prof);
@@ -95,7 +96,7 @@ export async function onMessageCreate(msg) {
     return;
   }
 
-  // Admin utilities (only server admins)
+  // Admin utilities (server admins only)
   if (cmd === "!travreset" || cmd === "!travwipe" || cmd === "!travgrant") {
     if (!msg.member?.permissions?.has?.("Administrator")) {
       return void msg.reply("🚫 Admins only.");
@@ -149,7 +150,7 @@ export async function onInteractionCreate(interaction) {
   // Validate signature
   if (!verify(idCore, parts.sig || "")) {
     return void interaction.reply({ content: "Signature mismatch.", ephemeral: true });
-  }
+    }
 
   // Only owner can reroll
   if (interaction.user.id !== uid) {
