@@ -34,10 +34,7 @@ import { onMessageCreate as onInventoryMsg } from "./economy/inventory-commands.
 import { onMessageCreate as onAdminEconMsg } from "./economy/admin-commands.js";
 
 // ---------- Vendors ----------
-import { onMessageCreate as onPantryMsg } from "./economy/vendor-pantry.js";   // Crimson Pantry
 import { onMessageCreate as onBarMsg } from "./economy/vendor-bar.js";         // Stirred Veil Bar
-import { onMessageCreate as onFleetMsg } from "./economy/vendor-fleet.js";     // Distorted Fleet Exports
-import { onMessageCreate as onRealityMsg } from "./economy/vendor-reality.js"; // Distorted Crimson Reality
 
 // ---------- Work / Shift System ----------
 import { onMessageCreate as onWorkMsg } from "./economy/work-commands.js";      // Handles !clockin, !work, !clockout
@@ -97,11 +94,7 @@ client.on("messageCreate", async (msg) => {
   await run(onTravelerMsg); 
   await run(onJobMsg, "jobs");
   await run(onWorkMsg, "work");
-  await run(onPantryMsg, "pantry");
   await run(onBarMsg, "bar");
-  await run(onFleetMsg, "fleet");          // inventory + car details
-  await run(onFleetChargeMsg, "fleet-charge"); // drive/charge/carcharge only
-  await run(onRealityMsg, "reality");
   await run(onBankMsg, "bank");
   await run(onInventoryMsg, "inventory");
   await run(onAdminEconMsg, "admin-econ");
