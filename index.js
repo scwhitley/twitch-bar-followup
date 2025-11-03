@@ -90,17 +90,19 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // required for !backstory
+    GatewayIntentBits.MessageContent,   // ← REQUIRED
+    GatewayIntentBits.GuildMembers
   ],
-  partials: [Partials.Channel],
+  partials: [Partials.Channel, Partials.GuildMember, Partials.Message],
+});
 });
 
 // --- Unified dispatcher: route every message to each handler safely ---
 client.on("messageCreate", async (msg) => {
   const run = async (fn) => { try { await fn?.(msg); } catch (e) { console.error("[handler error]", fn?.name, e); } };
 
-  await run(onBackstoryMsg, "backstory");
   await run(onTravelerMsg); 
+  await run(onBackstoryMsg, "backstory");
   await run(onJobMsg, "jobs");
   await run(onWorkMsg, "work");
   await run(onPantryMsg, "pantry");
