@@ -10,17 +10,23 @@ import axios from "axios";
 import { fetch as undiciFetch } from "undici";
 import { Redis } from "@upstash/redis";
 
-// ---------- Core / Shared ----------
+// ---------- Core / Shared (keep if you still use them elsewhere) ----------
 import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { LOVE_TIERS } from "./love-tiers.js";
 import { DUEL_ROASTS, RALLY_LINES, BAR_EVENTS, INVASION_STARTS } from "./faction-text.js";
 
-// --------- Traveler Creation --------
+// --------- Traveler Creation (your sheet builder / rerolls) --------
 import {
   onMessageCreate as onTravelerMsg,
   onInteractionCreate as onTravelerInteraction,
 } from "./traveler-command.js";
+
+// --------- Traveler Confirm (+1000 DD once) --------
+import {
+  onMessageCreate as onTravelerConfirmMsg,
+  onInteractionCreate as onTravelerConfirmInt,
+} from "./traveler-confirm.js";
 
 // --------- Party + Workboard -------
 import {
@@ -33,27 +39,23 @@ import {
   onInteractionCreate as onWorkboardIx
 } from "./economy/workboard.js";
 
-// ---------- Jobs ----------
-import {
-  onMessageCreate as onJobMsg,
-  onInteractionCreate as onJobInteraction,
-} from "./job-command.js";
-
 // ---------- Economy Core ----------
 import { onMessageCreate as onBankMsg } from "./economy/bank-commands.js";
 import { onMessageCreate as onInventoryMsg } from "./economy/inventory-commands.js";
 import { onMessageCreate as onAdminEconMsg } from "./economy/admin-commands.js";
 
-// ---------- Vendors ----------
-import { onMessageCreate as onBarMsg } from "./economy/vendor-bar.js";         // Stirred Veil Bar
+// ---------- Vendors (keep only the ones you use) ----------
+import { onMessageCreate as onBarMsg } from "./economy/vendor-bar.js"; // Stirred Veil Bar
 
-// ---------- Work / Shift System ----------
-import { onMessageCreate as onWorkMsg } from "./economy/work-commands.js";      // Handles !clockin, !work, !clockout
+// ---------- Dice ----------
+import { onMessageCreate as onDiceMsg } from "./economy/dice-commands.js";
 
-// ---------- Fleet / EV Charge ----------
-import { onMessageCreate as onFleetChargeMsg } from "./economy/fleet-charge.js"; // Handles !drive, !charge, !carcharge
+// ---------- (REMOVED) Old systems ----------
+// ❌ job-command.js (old hiring system) — removed
+// ❌ economy/work-commands.js (old clockin/work) — removed
+// ❌ economy/fleet-charge.js (old EV/charge) — removed
 
-
+// ---------- Redis / misc ----------
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
@@ -62,25 +64,23 @@ const fetch = globalThis.fetch || undiciFetch;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const LOVE_DB_FILE = path.join(__dirname, "love-log.json");
-const TOKEN = (process.env.DISCORD_TOKEN || "").trim();
- // set in Render env vars
+
+const TOKEN = (process.env.DISCORD_TOKEN || "").trim(); // set in Render env vars
 if (!TOKEN) {
   console.error("Missing DISCORD_TOKEN env var.");
   process.exit(1);
 }
 
-
-// ---------- Twitch EventSub config ----------
+// ---------- Twitch EventSub config (keep if you use) ----------
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID || "";
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET || "";
 const TWITCH_EVENTSUB_SECRET = process.env.TWITCH_EVENTSUB_SECRET || "";
 const TWITCH_BROADCASTER_ID = process.env.TWITCH_BROADCASTER_ID || "";
 const TWITCH_REWARD_ID = process.env.TWITCH_REWARD_ID || ""; // optional
 
-// ---------- StreamElements Loyalty API ----------
+// ---------- StreamElements Loyalty API (keep if you use) ----------
 const SE_JWT = process.env.SE_JWT || "";
 const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
-
 
 // ------ Global App ---------
 const app = express();
@@ -100,22 +100,38 @@ const client = new Client({
 
 // --- Unified dispatcher: route every message to each handler safely ---
 client.on("messageCreate", async (msg) => {
-  const run = async (fn) => { try { await fn?.(msg); } catch (e) { console.error("[handler error]", fn?.name, e); } };
-  await run(onTravelerMsg); 
+  const run = async (fn) => {
+    try { await fn?.(msg); } catch (e) { console.error("[handler error]", fn?.name, e); }
+  };
+
+  // Traveler creation + confirm
+  await run(onTravelerMsg);
+  await run(onTravelerConfirmMsg);
+
+  // Party + Workboard
   await run(onPartyMsg);
   await run(onWorkboardMsg);
-  await run(onWorkMsg, "work");
-  await run(onBarMsg, "bar");
-  await run(onBankMsg, "bank");
-  await run(onInventoryMsg, "inventory");
-  await run(onAdminEconMsg, "admin-econ");
+
+  // Economy
+  await run(onBarMsg);
+  await run(onBankMsg);
+  await run(onInventoryMsg);
+  await run(onAdminEconMsg);
+
+  // Dice
+  await run(onDiceMsg);
 });
 
 client.on("interactionCreate", async (ix) => {
-  const runI = async (fn) => { try { await fn?.(ix); } catch (e) { console.error("[interaction error]", fn?.name, e); } };
+  const runI = async (fn) => {
+    try { await fn?.(ix); } catch (e) { console.error("[interaction error]", fn?.name, e); }
+  };
 
-  await runI(onTravelerInteraction); // ✅ new traveler buttons
-  await runI(onJobInteraction, "job-interaction");
+  // Traveler interactions (sheet buttons + confirm button)
+  await runI(onTravelerInteraction);
+  await runI(onTravelerConfirmInt);
+
+  // Party + Workboard interactions
   await runI(onPartyIx);
   await runI(onWorkboardIx);
 });
@@ -131,15 +147,6 @@ client.login(TOKEN).catch((err) => {
   process.exit(1);
 });
 
-
-// ---------- Economy Listener -------
-client.on("messageCreate", (msg) => {
-  onBankMsg(msg);
-  onInventoryMsg(msg);
-  onAdminEconMsg(msg);
-  onWorkMsg(msg);
-  onBarMsg(msg);
-});
 
 // ---------- Award log (shared) ----------
 const AWARD_LOG_FILE = "./award-log.json";
