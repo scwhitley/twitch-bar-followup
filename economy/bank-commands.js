@@ -1,82 +1,57 @@
 // economy/bank-commands.js
 import { EmbedBuilder } from "discord.js";
-import { getBalance, addBalance, subBalance } from "./econ-core.js";
-import { Redis } from "@upstash/redis";
-const redis = Redis.fromEnv();
-
-// Local bank helpers (so we don't depend on econ-core exports)
-const BANK_KEY = (uid) => `econ:bank:${uid}`;
-
-async function getBank(uid) {
-  const v = await redis.get(BANK_KEY(uid));
-  return v ? parseInt(v, 10) : 0;
-}
-async function addBank(uid, amt) {
-  const after = await redis.incrby(BANK_KEY(uid), amt);
-  return parseInt(after, 10);
-}
-async function subBank(uid, amt) {
-  // Ensure we don't go negative
-  const current = await getBank(uid);
-  if (amt > current) throw new Error("Insufficient bank funds.");
-  const after = await redis.incrby(BANK_KEY(uid), -amt);
-  return parseInt(after, 10);
-}
+import { getWallet, getBank, deposit, withdraw, deDupeGuard } from "./econ-core.js";
 
 export async function onMessageCreate(msg) {
-  // single-response guard to prevent doubles
-  if (msg.author.bot || msg.__handled) return;
-
-  const parts = msg.content.trim().split(/\s+/);
+  if (msg.author.bot) return;
+  const parts = (msg.content || "").trim().split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
 
-  // ---- !balance / !bal
-  if (cmd === "!balance" || cmd === "!bal") {
-    const [wallet, bank] = await Promise.all([
-      getBalance(msg.author.id),
-      getBank(msg.author.id),
-    ]);
+  if (cmd !== "!deposit" && cmd !== "!withdraw" && cmd !== "!wallet" && cmd !== "!bank") return;
 
+  if (cmd === "!wallet" || cmd === "!bank") {
+    const w = await getWallet(msg.author.id);
+    const b = await getBank(msg.author.id);
     const e = new EmbedBuilder()
-      .setTitle(`🏦 ${msg.author.username} — Balance`)
+      .setTitle(`${msg.author.username}'s Accounts`)
       .addFields(
-        { name: "Wallet", value: `${wallet} DD`, inline: true },
-        { name: "Bank", value: `${bank} DD`, inline: true },
-        { name: "Total", value: `${wallet + bank} DD`, inline: true },
+        { name: "Wallet", value: `${w} DD`, inline: true },
+        { name: "Bank", value: `${b} DD`, inline: true },
       )
       .setColor("Blue");
-
-    await msg.channel.send({ embeds: [e] });
-    msg.__handled = true; return;
+    return void msg.channel.send({ embeds: [e] });
   }
 
-  // ---- !deposit <amount>
-  if (cmd === "!deposit") {
-    const amt = Math.max(0, parseInt(parts[1] || "0", 10));
-    if (!amt) { await msg.reply("Usage: `!deposit <amount>`"); msg.__handled = true; return; }
+  const amt = parseInt(parts[1], 10);
+  if (!Number.isInteger(amt) || amt <= 0) return void msg.reply("Enter a positive whole amount.");
 
-    try {
-      await subBalance(msg.author.id, amt);      // take from wallet
-      const after = await addBank(msg.author.id, amt); // add to bank
-      await msg.reply(`Deposited **${amt} DD**. Bank: **${after} DD**`);
-    } catch (e) {
-      await msg.reply(`❌ ${e?.message || "Deposit failed."}`);
+  // de-dupe by message id
+  const first = await deDupeGuard(`bank:${msg.id}`, 60);
+  if (!first) return;
+
+  try {
+    if (cmd === "!deposit") {
+      const { wallet, bank } = await deposit(msg.author.id, amt);
+      const e = new EmbedBuilder().setTitle("🏦 Deposit")
+        .setDescription(`Moved **${amt} DD** to bank.`)
+        .addFields(
+          { name: "Wallet", value: `${wallet} DD`, inline: true },
+          { name: "Bank", value: `${bank} DD`, inline: true },
+        ).setColor("Green");
+      return void msg.channel.send({ embeds: [e] });
     }
-    msg.__handled = true; return;
-  }
 
-  // ---- !withdraw <amount>
-  if (cmd === "!withdraw") {
-    const amt = Math.max(0, parseInt(parts[1] || "0", 10));
-    if (!amt) { await msg.reply("Usage: `!withdraw <amount>`"); msg.__handled = true; return; }
-
-    try {
-      const after = await subBank(msg.author.id, amt); // take from bank
-      await addBalance(msg.author.id, amt);            // add to wallet
-      await msg.reply(`Withdrew **${amt} DD**. Bank: **${after} DD**`);
-    } catch (e) {
-      await msg.reply(`❌ ${e?.message || "Withdraw failed."}`);
+    if (cmd === "!withdraw") {
+      const { wallet, bank } = await withdraw(msg.author.id, amt);
+      const e = new EmbedBuilder().setTitle("🏧 Withdraw")
+        .setDescription(`Pulled **${amt} DD** from bank.`)
+        .addFields(
+          { name: "Wallet", value: `${wallet} DD`, inline: true },
+          { name: "Bank", value: `${bank} DD`, inline: true },
+        ).setColor("Orange");
+      return void msg.channel.send({ embeds: [e] });
     }
-    msg.__handled = true; return;
+  } catch (err) {
+    return void msg.reply(`❌ ${err.message || "Operation failed."}`);
   }
 }
