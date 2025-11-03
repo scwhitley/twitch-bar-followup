@@ -1,41 +1,71 @@
 // traveler-builder.js
 import { makeRng, seedFrom, pick } from "./rng.js";
 import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
-import { pronounsFor, applyPronouns } from "./pronouns.js";
 import {
   REROLLABLE_FIELDS, RACES, REGIONS, AFFINITIES, EMOTION_TRIGGERS,
-  MANIFESTATIONS, CLASSES, FACTIONS, START_CORRUPTION
+  MANIFESTATIONS, CLASSES, FACTIONS, START_CORRUPTION,
+  RACE_META, PERSONALITY_POOL
 } from "./traveler-tables.js";
 
-// helper: random name
+// ---------- helpers
 function randomName(rng) {
   const pools = [maleFirst, femaleFirst, neutralFirst];
   const first = pick(rng, pick(rng, pools));
   return `${first} ${pick(rng, lastNames)}`;
 }
-
-function rollRegion(rng) { return pick(rng, REGIONS); }
-function rollClass(rng)  { return pick(rng, CLASSES); }
-function rollAff(rng)    { return pick(rng, AFFINITIES); }
-function rollFaction(rng){ return pick(rng, FACTIONS); }
+function roll(listOrObjArr, rng) {
+  return pick(rng, listOrObjArr);
+}
+function rollRegion(rng) { return roll(REGIONS, rng); }
+function rollClass(rng)  { return roll(CLASSES, rng); }
+function rollAff(rng)    { return roll(AFFINITIES, rng); }
+function rollFaction(rng){ return roll(FACTIONS, rng); }
+function raceMeta(race)  { return RACE_META[race] || RACE_META["Human"]; }
 
 export function baseSeed(userId) {
-  // stable base; you can swap in Date.now() for fully fresh each time
   return seedFrom(userId, "traveler", "v1");
+}
+
+// sample 2–3 physical trait snippets for the race
+function sampleTraits(rng, race) {
+  const t = raceMeta(race).traits || [];
+  const size = Math.min(3, Math.max(2, Math.floor(rng() * 3) + 1)); // 2–3
+  const pool = [...t];
+  const out = [];
+  while (out.length < size && pool.length) {
+    const i = Math.floor(rng() * pool.length);
+    out.push(pool.splice(i,1)[0]);
+  }
+  return out;
+}
+
+function rollColor(rng, race) {
+  const colors = raceMeta(race).colors || ["neutral tone"];
+  return pick(rng, colors);
+}
+function rollAge(rng, race) {
+  const a = raceMeta(race).age || { adultMin: 18, adultMax: 60 };
+  const span = Math.max(0, a.adultMax - a.adultMin);
+  return a.adultMin + Math.floor(rng() * (span + 1));
 }
 
 export function createProfile(userId, overrides = {}) {
   const rng = makeRng(seedFrom(baseSeed(userId), "create", Date.now().toString()));
-
   const region = rollRegion(rng);
   const klass  = rollClass(rng);
   const aff    = rollAff(rng);
   const fact   = rollFaction(rng);
 
+  const race = overrides.race || pick(rng, RACES);
+  const age  = overrides.age ?? rollAge(rng, race);
+  const color = overrides.color_variation || rollColor(rng, race);
+  const phys = overrides.physical_traits || sampleTraits(rng, race);
+  const personality = overrides.personality || pick(rng, PERSONALITY_POOL);
+
   const doc = {
     seed: baseSeed(userId),
     name: overrides.name || randomName(rng),
-    race: overrides.race || pick(rng, RACES),
+    race,
     class: overrides.class || klass.label,
     affinity: overrides.affinity || aff.label,
     emotion_trigger: overrides.emotion_trigger || pick(rng, EMOTION_TRIGGERS),
@@ -44,7 +74,14 @@ export function createProfile(userId, overrides = {}) {
     region: overrides.region || region.label,
     region_trait: region.trait,
     corruption_level: overrides.corruption_level ?? pick(rng, START_CORRUPTION),
-    stats: { VIT: 10, WIL: 10, PRE: 10, INT: 10, AGI: 10, STR: 10 }, // placeholder stat block
+
+    // NEW fields
+    age,
+    personality,
+    color_variation: color,
+    physical_traits: phys, // array of 2–3 strings
+
+    stats: { VIT: 10, WIL: 10, PRE: 10, INT: 10, AGI: 10, STR: 10 },
 
     locks: Object.fromEntries(REROLLABLE_FIELDS.map(f => [f, false])),
     rerolls: Object.fromEntries(REROLLABLE_FIELDS.map(f => [f, 1])),
@@ -58,8 +95,8 @@ export function createProfile(userId, overrides = {}) {
 
 // Deterministic per-field reroll using seed derivation
 export function rerollField(userId, profile, field) {
-  const allowed = new Set(REROLLABLE_FIELDS);
-  if (!allowed.has(field)) throw new Error("Field is not rerollable.");
+  const ok = new Set(REROLLABLE_FIELDS);
+  if (!ok.has(field)) throw new Error("Field is not rerollable.");
   if (profile.locks?.[field]) throw new Error("That field is already locked.");
   if (!profile.rerolls || profile.rerolls[field] <= 0) throw new Error("No rerolls left for that field.");
 
@@ -71,7 +108,17 @@ export function rerollField(userId, profile, field) {
 
   switch (field) {
     case "name": next = randomName(rng); break;
-    case "race": next = pick(rng, RACES); break;
+    case "race": {
+      const newRace = pick(rng, RACES);
+      profile.race = newRace;
+      // refresh race-bound cosmetics when race changes
+      profile.color_variation = rollColor(rng, newRace);
+      profile.physical_traits = sampleTraits(rng, newRace);
+      // keep age within the new race’s adult band
+      profile.age = rollAge(rng, newRace);
+      next = newRace;
+      break;
+    }
     case "class": next = rollClass(rng).label; break;
     case "affinity": next = rollAff(rng).label; break;
     case "emotion_trigger": next = pick(rng, EMOTION_TRIGGERS); break;
@@ -80,10 +127,17 @@ export function rerollField(userId, profile, field) {
     case "region": {
       const r = rollRegion(rng);
       next = r.label;
-      profile.region_trait = r.trait; // keep trait synced
+      profile.region_trait = r.trait;
       break;
     }
     case "corruption_level": next = pick(rng, START_CORRUPTION); break;
+
+    // NEW rerolls
+    case "age": next = rollAge(rng, profile.race); break;
+    case "personality": next = pick(rng, PERSONALITY_POOL); break;
+    case "color_variation": next = rollColor(rng, profile.race); break;
+    case "physical_traits": next = sampleTraits(rng, profile.race); break;
+
     default: throw new Error("Unsupported field.");
   }
 
@@ -95,13 +149,13 @@ export function rerollField(userId, profile, field) {
 
 // Pretty embed text
 export function renderEmbedData(profile) {
-  const pron = pronounsFor(); // gender-less for now; add if you want
   const rareFlag = /Dread Apostle/i.test(profile.class) ? " ⚠️" : "";
-
   const footerRerolls =
-    Object.entries(profile.rerolls)
+    Object.entries(profile.rerolls || {})
       .map(([k,v]) => `${k.replace(/_/g," ")}(${v})`)
       .join(" • ");
+
+  const phys = Array.isArray(profile.physical_traits) ? profile.physical_traits.slice(0,2).join("; ") : String(profile.physical_traits || "");
 
   return {
     title: `Traveler: ${profile.name} — ${profile.race} · ${profile.class}${rareFlag}`,
@@ -112,6 +166,12 @@ export function renderEmbedData(profile) {
       { name: "Emotion Trigger", value: profile.emotion_trigger, inline: true },
       { name: "Manifestation", value: profile.manifestation, inline: true },
       { name: "Corruption", value: String(profile.corruption_level), inline: true },
+
+      // NEW block
+      { name: "Age", value: String(profile.age), inline: true },
+      { name: "Personality", value: profile.personality, inline: true },
+      { name: "Color Variation", value: profile.color_variation, inline: true },
+      { name: "Physical Traits", value: phys || "—", inline: false },
     ],
     footer: `Seed ${profile.seed} — Rerolls left: ${footerRerolls}`,
   };
