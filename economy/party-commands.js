@@ -1,91 +1,49 @@
-// economy/party-commands.js
-import {
-  getParty, setPartySize, addTraveler, addPartyFunds, subPartyFunds, setPartyFunds
-} from "./party-core.js";
-import {
-  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField
-} from "discord.js";
+// party-commands.js
+import { EmbedBuilder } from "discord.js";
+import { getPartySnapshot } from "./economy/party-core.js";
 
-const isAdmin = (m) =>
-  !!m?.permissions?.has(PermissionsBitField.Flags.Administrator) ||
-  !!m?.permissions?.has(PermissionsBitField.Flags.ManageGuild);
-
-// Pretty
-const partyEmbed = (g, p) =>
-  new EmbedBuilder()
-    .setTitle("🎒 Party Status")
-    .setDescription(`Travelers: **${p.size}** / 4\nParty Balance: **${p.balance} DD**`)
-    .setColor("Purple");
+function corBar(v) {
+  const val = Math.max(0, Math.min(10, v|0));
+  return "▰".repeat(val) + "▱".repeat(10 - val);
+}
+function corColor(v) {
+  if (v <= 3) return "Green";
+  if (v <= 6) return "Orange";
+  if (v <= 8) return "Red";
+  return "DarkRed";
+}
 
 export async function onMessageCreate(msg) {
   if (msg.author.bot) return;
-  const parts = msg.content.trim().split(/\s+/);
-  const cmd = (parts[0] || "").toLowerCase();
+  const cmd = (msg.content || "").trim().toLowerCase();
+  if (cmd !== "!party" && cmd !== "!party all") return;
+
   const g = msg.guild?.id || "global";
+  const snap = await getPartySnapshot(g);
 
-  // !party (show)
-  if (cmd === "!party") {
-    const p = await getParty(g);
-    return msg.channel.send({ embeds: [partyEmbed(g, p)] });
+  const act = snap.members.filter(m => m.active);
+  const rest = cmd === "!party all" ? snap.members.filter(m => !m.active) : [];
+
+  const e = new EmbedBuilder()
+    .setTitle(`🛡️ Party: ${snap.meta.name}`)
+    .setDescription(`Active: **${act.length}** / Total: **${snap.members.length}**`)
+    .setColor("Blue");
+
+  if (act.length) {
+    const lines = act
+      .sort((a,b) => b.corruption - a.corruption || a.name.localeCompare(b.name))
+      .map(m => `• **${m.name}** (<@${m.userId}>) — ${m.race} ${m.clazz}\n  Corruption: ${m.corruption}/10  ${corBar(m.corruption)}\n  Wallet: ${m.wallet} DD • Bank: ${m.bank} DD`);
+    e.addFields({ name: "— ACTIVE —", value: lines.join("\n") });
+  } else {
+    e.addFields({ name: "— ACTIVE —", value: "_No active travelers._" });
   }
 
-  // !startcampaign
-  if (cmd === "!startcampaign") {
-    if (!isAdmin(msg.member)) return msg.reply("🚫 Admin only.");
-    const row = new ActionRowBuilder().addComponents(
-      [1,2,3,4].map(n =>
-        new ButtonBuilder()
-          .setCustomId(`party:start:${n}`)
-          .setLabel(`${n} Traveler${n>1?"s":""}`)
-          .setStyle(ButtonStyle.Primary)
-      )
-    );
-    const e = new EmbedBuilder()
-      .setTitle("📜 Start Campaign")
-      .setDescription("Select starting party size.")
-      .setColor("Purple");
-    return msg.channel.send({ embeds: [e], components: [row] });
+  if (rest.length) {
+    const lines = rest
+      .sort((a,b) => a.name.localeCompare(b.name))
+      .map(m => `• **${m.name}** (<@${m.userId}>) — ${m.status === "pending" ? "Pending confirmation (use !confirmchar)" : "Benched"}`);
+    e.addFields({ name: "— PENDING / BENCHED —", value: lines.join("\n") });
   }
 
-  // !addtraveler
-  if (cmd === "!addtraveler") {
-    if (!isAdmin(msg.member)) return msg.reply("🚫 Admin only.");
-    const next = await addTraveler(g, 1);
-    const p = await getParty(g);
-    return msg.channel.send({
-      embeds: [partyEmbed(g, p).setFooter({ text: `Added one traveler (now ${next}).` })],
-    });
-  }
-
-  // Optional admin econ for party pool
-  if (cmd === "!partygrant" || cmd === "!partytake" || cmd === "!partyset") {
-    if (!isAdmin(msg.member)) return msg.reply("🚫 Admin only.");
-    const amt = parseInt(parts[1], 10);
-    if (!Number.isFinite(amt) || amt < 0) return msg.reply("Usage: `!partygrant 500` / `!partytake 100` / `!partyset 2000`");
-    if (cmd === "!partygrant") await addPartyFunds(g, amt);
-    if (cmd === "!partytake")  await subPartyFunds(g, amt);
-    if (cmd === "!partyset")   await setPartyFunds(g, amt);
-    const p = await getParty(g);
-    return msg.channel.send({ embeds: [partyEmbed(g, p)] });
-  }
-}
-
-export async function onInteractionCreate(interaction) {
-  if (!interaction.isButton()) return;
-  const id = interaction.customId || "";
-  if (!id.startsWith("party:start:")) return;
-  if (!interaction.member?.permissions?.has?.("Administrator")) {
-    return interaction.reply({ content: "🚫 Admin only.", ephemeral: true });
-  }
-
-  const n = parseInt(id.split(":")[2], 10);
-  const g = interaction.guild?.id || "global";
-  await setPartySize(g, n);
-  const p = await getParty(g);
-  const e = partyEmbed(g, p).setTitle("✅ Campaign Started");
-  try {
-    await interaction.update({ embeds: [e], components: [] });
-  } catch {
-    await interaction.reply({ embeds: [e], ephemeral: false });
-  }
+  return void msg.channel.send({ embeds: [e] });
 }
