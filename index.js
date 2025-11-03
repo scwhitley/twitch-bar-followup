@@ -8,7 +8,7 @@ import { Client, GatewayIntentBits, Partials } from "discord.js";
 import fs from "fs";
 import axios from "axios";
 import { fetch as undiciFetch } from "undici";
-import { Redis } from "@upstash/redis"
+import { Redis } from "@upstash/redis";
 
 // ---------- Core / Shared ----------
 import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
