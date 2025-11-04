@@ -1,5 +1,10 @@
-// traveler-abilities.js
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
+// traveler-abilities.js (patched)
+import {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} from "discord.js";
 import { Redis } from "@upstash/redis";
 import { makeRng, rollAbilityArray, modsFrom } from "./abilities-core.js";
 
@@ -12,24 +17,25 @@ const LOCK_KEY = (uid) => `trav:${uid}:abilities:locked`;
 function fmt(scores) {
   const mods = modsFrom(scores);
   const mk = (k) => {
-    const m = mods[k.toLowerCase()];
+    const m = mods[k.toLowerCase()] ?? 0;
     const sign = m >= 0 ? "+" : "−";
     return `**${k}** ${scores[k]} (${sign}${Math.abs(m)})`;
   };
-  return ["STR","DEX","CON","INT","WIS","CHA"].map(mk).join("  •  ");
+  return ["STR", "DEX", "CON", "INT", "WIS", "CHA"].map(mk).join("  •  ");
 }
 
 async function getRerolls(uid) {
   return parseInt(await redis.get(R_KEY(uid))) || 0;
 }
 
-function rowButtons(locked, rerollsLeft) {
+function rows(locked, rerollsUsed) {
+  const left = Math.max(0, 2 - (rerollsUsed || 0));
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("trav:abil:reroll")
-      .setLabel(`🎲 Reroll (${Math.max(0, 2 - rerollsLeft)} left)`)
+      .setLabel(`🎲 Reroll (${left} left)`)
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(locked || rerollsLeft >= 2),
+      .setDisabled(locked || left <= 0),
     new ButtonBuilder()
       .setCustomId("trav:abil:lock")
       .setLabel("🔒 Lock Scores")
@@ -39,9 +45,40 @@ function rowButtons(locked, rerollsLeft) {
   return [row];
 }
 
+// Try to edit the original; if we can’t, fall back to sending a new message.
+// This prevents “This interaction failed.”
+async function safeUpdate(ix, payload) {
+  try {
+    if (ix.isRepliable()) {
+      // Prefer update on button interactions tied to a message
+      if (ix.isButton()) {
+        try {
+          await ix.update(payload);
+          return;
+        } catch {}
+      }
+      // If update failed or isn’t allowed, reply (or edit reply if already deferred)
+      if (ix.deferred || ix.replied) {
+        await ix.followUp(payload);
+      } else {
+        await ix.reply(payload);
+      }
+      return;
+    }
+  } catch {
+    // ignore — fall back to channel send
+  }
+  // Final fallback: just send to channel so the user sees *something*
+  try {
+    await ix.channel?.send(payload);
+  } catch {
+    // swallow — nothing else we can do
+  }
+}
+
 export async function onMessageCreate(msg) {
   if (msg.author.bot) return;
-  const content = (msg.content||"").trim().toLowerCase();
+  const content = (msg.content || "").trim().toLowerCase();
   if (content !== "!rollabilities") return;
 
   const locked = !!(await redis.get(LOCK_KEY(msg.author.id)));
@@ -51,16 +88,20 @@ export async function onMessageCreate(msg) {
 
   await redis.set(A_KEY(msg.author.id), JSON.stringify(scores));
   await redis.set(M_KEY(msg.author.id), JSON.stringify(modsFrom(scores)));
-  // do NOT increment rerolls on initial open; only on click
+  // don’t increment rerolls here; only on reroll click
   const rer = await getRerolls(msg.author.id);
 
   const e = new EmbedBuilder()
     .setTitle("🧬 Ability Scores (4d6 drop lowest)")
     .setDescription(fmt(scores))
-    .setFooter({ text: locked ? "Locked — rerolls disabled" : "You may reroll up to 2 times before locking" })
+    .setFooter({
+      text: locked
+        ? "Locked — rerolls disabled"
+        : "You may reroll up to 2 times before locking",
+    })
     .setColor(locked ? "Grey" : "Green");
 
-  await msg.channel.send({ embeds: [e], components: rowButtons(locked, rer) });
+  await msg.channel.send({ embeds: [e], components: rows(locked, rer) });
 }
 
 export async function onInteractionCreate(ix) {
@@ -71,37 +112,71 @@ export async function onInteractionCreate(ix) {
   const locked = !!(await redis.get(LOCK_KEY(uid)));
   let rer = await getRerolls(uid);
 
+  // Ensure we have a score set
+  const raw = await redis.get(A_KEY(uid));
+  let scores = raw ? JSON.parse(raw) : null;
+
+  if (!scores) {
+    // if user hit a button without running !rollabilities first
+    return void safeUpdate(ix, {
+      content:
+        "You haven’t rolled abilities yet. Run `!rollabilities` first.",
+      ephemeral: true,
+    });
+  }
+
   if (ix.customId === "trav:abil:lock") {
+    if (locked) {
+      return void safeUpdate(ix, {
+        content: "Your abilities are already locked.",
+        ephemeral: true,
+      });
+    }
     await redis.set(LOCK_KEY(uid), "1");
-    const scores = JSON.parse(await redis.get(A_KEY(uid)) || "{}");
+    // Re-read scores to be safe
+    scores = JSON.parse((await redis.get(A_KEY(uid))) || "{}");
+
     const e = new EmbedBuilder()
       .setTitle("🔒 Abilities Locked")
       .setDescription(fmt(scores))
       .setColor("Blue");
-    return void ix.update({ embeds: [e], components: rowButtons(true, rer) });
+
+    return void safeUpdate(ix, {
+      embeds: [e],
+      components: rows(true, rer), // disabled buttons
+    });
   }
 
   if (ix.customId === "trav:abil:reroll") {
-    if (locked) return void ix.reply({ content: "Already locked.", ephemeral: true });
-    if (rer >= 2) return void ix.reply({ content: "You’ve used both rerolls.", ephemeral: true });
+    if (locked) {
+      return void safeUpdate(ix, {
+        content: "Already locked — rerolls disabled.",
+        ephemeral: true,
+      });
+    }
+    if (rer >= 2) {
+      return void safeUpdate(ix, {
+        content: "You’ve used both rerolls.",
+        ephemeral: true,
+      });
+    }
 
     const rng = makeRng(`${uid}:${Date.now()}`);
-    const scores = rollAbilityArray(rng);
-    await redis.set(A_KEY(uid), JSON.stringify(scores));
-    await redis.set(M_KEY(uid), JSON.stringify(modsFrom(scores)));
+    const newScores = rollAbilityArray(rng);
+    await redis.set(A_KEY(uid), JSON.stringify(newScores));
+    await redis.set(M_KEY(uid), JSON.stringify(modsFrom(newScores)));
     await redis.set(R_KEY(uid), rer + 1);
     rer = rer + 1;
 
     const e = new EmbedBuilder()
       .setTitle(`🎲 Reroll #${rer}`)
-      .setDescription(fmt(scores))
+      .setDescription(fmt(newScores))
       .setFooter({ text: `${2 - rer} reroll(s) remaining` })
       .setColor("Orange");
 
-    try {
-      await ix.update({ embeds: [e], components: rowButtons(false, rer) });
-    } catch {
-      await ix.reply({ embeds: [e], components: rowButtons(false, rer), ephemeral: false });
-    }
+    return void safeUpdate(ix, {
+      embeds: [e],
+      components: rows(false, rer),
+    });
   }
 }
