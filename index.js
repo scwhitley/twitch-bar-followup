@@ -101,6 +101,16 @@ const client = new Client({
 });
 
 // --- Unified dispatcher: route every message to each handler safely ---
+// local in-process guard (30s window)
+const _seenLocal = new Set();
+function seenOnce(key, ttlMs = 30000) {
+  if (_seenLocal.has(key)) return false;
+  _seenLocal.add(key);
+  setTimeout(() => _seenLocal.delete(key), ttlMs).unref?.();
+  return true;
+}
+
+
 client.on("messageCreate", async (msg) => {
   if (msg.author?.bot) return;
 
