@@ -28,6 +28,15 @@ import {
   onInteractionCreate as onTravelerConfirmInt,
 } from "./traveler-confirm.js";
 
+// ---------- Abilities + Skills ----------
+import { onMessageCreate as onAbilitiesMsg, onInteractionCreate as onAbilitiesIx } from "./traveler-abilities.js";
+import { onMessageCreate as onSkillsMsg,    onInteractionCreate as onSkillsIx }    from "./traveler-skills.js";
+
+// ---------- Conditions & Checks ----------
+import { onMessageCreate as onCondsMsg, onInteractionCreate as onCondsIx } from "./conditions-commands.js";
+import { onMessageCreate as onChecksMsg, onInteractionCreate as onChecksIx } from "./checks-command.js";
+
+
 // --------- Party + Workboard -------
 import { onMessageCreate as onPartyMsg } from "./economy/party-commands.js";
 
@@ -46,11 +55,6 @@ import { onMessageCreate as onBarMsg } from "./economy/vendor-bar.js"; // Stirre
 
 // ---------- Dice ----------
 import { onMessageCreate as onDiceMsg } from "./economy/dice-commands.js";
-
-// ---------- (REMOVED) Old systems ----------
-// ❌ job-command.js (old hiring system) — removed
-// ❌ economy/work-commands.js (old clockin/work) — removed
-// ❌ economy/fleet-charge.js (old EV/charge) — removed
 
 // ---------- Redis / misc ----------
 export const redis = new Redis({
@@ -115,6 +119,12 @@ client.on("messageCreate", async (msg) => {
   await run(onInventoryMsg);
   await run(onAdminEconMsg);
 
+  // Abilities + Skills + Conditions
+  await run(onAbilitiesMsg);
+  await run(onSkillsMsg);
+  await run(onCondsMsg);
+  await run(onChecksMsg);
+
   // Dice
   await run(onDiceMsg);
 });
@@ -130,6 +140,12 @@ client.on("interactionCreate", async (ix) => {
 
   // Party + Workboard interactions
   await runI(onWorkboardIx);
+
+  // Abilities + Skills + Conditions interactions
+  await runI(onAbilitiesIx);
+  await runI(onSkillsIx);
+  await runI(onCondsIx);
+  await runI(onChecksIx);
 });
 
 // One ready log (use once to avoid dupes on hot-reload)
