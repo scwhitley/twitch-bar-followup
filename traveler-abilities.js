@@ -1,27 +1,41 @@
-// traveler-abilities.js (patched)
+// traveler-abilities.js
 import {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  PermissionsBitField,
 } from "discord.js";
 import { Redis } from "@upstash/redis";
-import { resetAbilities, makeRng, rollAbilityArray, modsFrom } from "./abilities-core.js";
+import {
+  resetAbilities,
+  makeRng,
+  rollAbilityArray,
+  modsFrom,
+} from "./abilities-core.js";
 
 const redis = Redis.fromEnv();
-const A_KEY = (uid) => `trav:${uid}:abilities`;
-const M_KEY = (uid) => `trav:${uid}:mods`;
-const R_KEY = (uid) => `trav:${uid}:rerolls:abilities`;
-const LOCK_KEY = (uid) => `trav:${uid}:abilities:locked`;
+
+const A_KEY   = (uid) => `trav:${uid}:abilities`;
+const M_KEY   = (uid) => `trav:${uid}:mods`;
+const R_KEY   = (uid) => `trav:${uid}:rerolls:abilities`;
+const LOCK_KEY= (uid) => `trav:${uid}:abilities:locked`;
 
 function fmt(scores) {
   const mods = modsFrom(scores);
-  const mk = (k) => {
-    const m = mods[k.toLowerCase()] ?? 0;
+  const mk = (abbr, label = abbr) => {
+    const m = mods[abbr.toLowerCase()] ?? 0;
     const sign = m >= 0 ? "+" : "−";
-    return `**${k}** ${scores[k]} (${sign}${Math.abs(m)})`;
+    return `**${label}** ${scores[abbr]} (${sign}${Math.abs(m)})`;
   };
-  return ["STR", "DEX", "CON", "INT", "WIS", "CHA"].map(mk).join("  •  ");
+  return [
+    mk("STR", "STR"),
+    mk("DEX", "DEX"),
+    mk("CON", "CON"),
+    mk("INT", "INT"),
+    mk("WIS", "WIS"),
+    mk("CHA", "CHA"),
+  ].join("  •  ");
 }
 
 async function getRerolls(uid) {
@@ -45,19 +59,17 @@ function rows(locked, rerollsUsed) {
   return [row];
 }
 
-// Try to edit the original; if we can’t, fall back to sending a new message.
-// This prevents “This interaction failed.”
+// Try to update the original interaction message; otherwise reply/followUp;
+// finally, fall back to channel send so users still see output.
 async function safeUpdate(ix, payload) {
   try {
     if (ix.isRepliable()) {
-      // Prefer update on button interactions tied to a message
       if (ix.isButton()) {
         try {
           await ix.update(payload);
           return;
-        } catch {}
+        } catch {/* fall through */}
       }
-      // If update failed or isn’t allowed, reply (or edit reply if already deferred)
       if (ix.deferred || ix.replied) {
         await ix.followUp(payload);
       } else {
@@ -65,45 +77,71 @@ async function safeUpdate(ix, payload) {
       }
       return;
     }
-  } catch {
-    // ignore — fall back to channel send
-  }
-  // Final fallback: just send to channel so the user sees *something*
+  } catch { /* ignore */ }
   try {
     await ix.channel?.send(payload);
-  } catch {
-    // swallow — nothing else we can do
+  } catch { /* noop */ }
+}
+
+// ---------------------- MESSAGE COMMANDS ----------------------
+export async function onMessageCreate(msg) {
+  if (msg.author.bot) return;
+
+  const parts = msg.content.trim().split(/\s+/);
+  const cmd = (parts[0] || "").toLowerCase();
+  const uid = msg.author.id;
+
+  // Roll abilities + show UI
+  if (cmd === "!rollabilities" || cmd === "!abilities" || cmd === "!abilroll") {
+    const locked = !!(await redis.get(LOCK_KEY(uid)));
+    const rngSeed = `${uid}:${Date.now()}`;
+    const rng = makeRng(rngSeed);
+    const scores = rollAbilityArray(rng);
+
+    await redis.set(A_KEY(uid), JSON.stringify(scores));
+    await redis.set(M_KEY(uid), JSON.stringify(modsFrom(scores)));
+    // Only increment rerolls via the button; do not here.
+    const rer = await getRerolls(uid);
+
+    const e = new EmbedBuilder()
+      .setTitle("🧬 Ability Scores (4d6 drop lowest)")
+      .setDescription(fmt(scores))
+      .setFooter({
+        text: locked
+          ? "Locked — rerolls disabled"
+          : "You may reroll up to 2 times before locking",
+      })
+      .setColor(locked ? "Grey" : "Green");
+
+    return void msg.channel.send({ embeds: [e], components: rows(locked, rer) });
+  }
+
+  // Reset abilities (self or @target if admin)
+  if (cmd === "!abilreset") {
+    const target = msg.mentions.users.first() || msg.author;
+    const isAdmin = msg.member?.permissions?.has?.(PermissionsBitField.Flags.Administrator);
+
+    if (target.id !== uid && !isAdmin) {
+      return void msg.reply("🚫 You can only reset **your own** abilities. Admins may target others with a mention.");
+    }
+
+    const wiped = await resetAbilities(target.id);
+    const who = target.id === uid ? "your" : `<@${target.id}>'s`;
+
+    const e = new EmbedBuilder()
+      .setTitle("♻️ Ability Scores Reset")
+      .setDescription(
+        `Cleared ${who} ability scores, modifiers, locks, and reroll counters.\n` +
+        `Use **!rollabilities** to generate fresh scores.`
+      )
+      .setFooter({ text: `Cleared ${wiped} key${wiped === 1 ? "" : "s"}` })
+      .setColor("Blue");
+
+    return void msg.channel.send({ embeds: [e] });
   }
 }
 
-export async function onMessageCreate(msg) {
-  if (msg.author.bot) return;
-  const content = (msg.content || "").trim().toLowerCase();
-  if (content !== "!rollabilities") return;
-
-  const locked = !!(await redis.get(LOCK_KEY(msg.author.id)));
-  const seed = `${msg.author.id}:${Date.now()}`;
-  const rng = makeRng(seed);
-  const scores = rollAbilityArray(rng);
-
-  await redis.set(A_KEY(msg.author.id), JSON.stringify(scores));
-  await redis.set(M_KEY(msg.author.id), JSON.stringify(modsFrom(scores)));
-  // don’t increment rerolls here; only on reroll click
-  const rer = await getRerolls(msg.author.id);
-
-  const e = new EmbedBuilder()
-    .setTitle("🧬 Ability Scores (4d6 drop lowest)")
-    .setDescription(fmt(scores))
-    .setFooter({
-      text: locked
-        ? "Locked — rerolls disabled"
-        : "You may reroll up to 2 times before locking",
-    })
-    .setColor(locked ? "Grey" : "Green");
-
-  await msg.channel.send({ embeds: [e], components: rows(locked, rer) });
-}
-
+// ---------------------- BUTTON INTERACTIONS ----------------------
 export async function onInteractionCreate(ix) {
   if (!ix.isButton()) return;
   if (!ix.customId?.startsWith("trav:abil:")) return;
@@ -112,26 +150,17 @@ export async function onInteractionCreate(ix) {
   const locked = !!(await redis.get(LOCK_KEY(uid)));
   let rer = await getRerolls(uid);
 
-  
-export async function onMessageCreate(msg) {
-  if (msg.author.bot) return;
-  const parts = msg.content.trim().split(/\s+/);
-  const cmd = (parts[0] || "").toLowerCase();
-
-
-  // Ensure we have a score set
+  // Ensure scores exist
   const raw = await redis.get(A_KEY(uid));
   let scores = raw ? JSON.parse(raw) : null;
-
   if (!scores) {
-    // if user hit a button without running !rollabilities first
     return void safeUpdate(ix, {
-      content:
-        "You haven’t rolled abilities yet. Run `!rollabilities` first.",
+      content: "You haven’t rolled abilities yet. Run `!rollabilities` first.",
       ephemeral: true,
     });
   }
 
+  // Lock
   if (ix.customId === "trav:abil:lock") {
     if (locked) {
       return void safeUpdate(ix, {
@@ -140,7 +169,7 @@ export async function onMessageCreate(msg) {
       });
     }
     await redis.set(LOCK_KEY(uid), "1");
-    // Re-read scores to be safe
+    // refresh to be safe
     scores = JSON.parse((await redis.get(A_KEY(uid))) || "{}");
 
     const e = new EmbedBuilder()
@@ -150,10 +179,11 @@ export async function onMessageCreate(msg) {
 
     return void safeUpdate(ix, {
       embeds: [e],
-      components: rows(true, rer), // disabled buttons
+      components: rows(true, rer),
     });
   }
 
+  // Reroll
   if (ix.customId === "trav:abil:reroll") {
     if (locked) {
       return void safeUpdate(ix, {
@@ -168,26 +198,6 @@ export async function onMessageCreate(msg) {
       });
     }
 
-     // --- NEW: !abilreset [@user]
-  if (cmd === "!abilreset") {
-    const target = msg.mentions.users.first() || msg.author;
-    const isAdmin = msg.member?.permissions?.has?.(PermissionsBitField.Flags.Administrator);
-
-    if (target.id !== msg.author.id && !isAdmin) {
-      return void msg.reply("🚫 You can only reset **your own** abilities. Admins may target others with a mention.");
-    }
-
-    const wiped = await resetAbilities(target.id);
-    const who = target.id === msg.author.id ? "your" : `<@${target.id}>'s`;
-
-    const e = new EmbedBuilder()
-      .setTitle("♻️ Ability Scores Reset")
-      .setDescription(`Cleared ${who} ability scores, modifiers, locks, and reroll counters.\nUse **!rollabilities** (or your sheet button) to generate fresh scores.`)
-      .setFooter({ text: `Cleared ${wiped} key${wiped === 1 ? "" : "s"}` })
-      .setColor("Blue");
-
-    return void msg.channel.send({ embeds: [e] });
-  }
     const rng = makeRng(`${uid}:${Date.now()}`);
     const newScores = rollAbilityArray(rng);
     await redis.set(A_KEY(uid), JSON.stringify(newScores));
