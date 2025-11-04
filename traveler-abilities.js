@@ -6,7 +6,7 @@ import {
   ButtonStyle,
 } from "discord.js";
 import { Redis } from "@upstash/redis";
-import { makeRng, rollAbilityArray, modsFrom } from "./abilities-core.js";
+import { resetAbilities, makeRng, rollAbilityArray, modsFrom } from "./abilities-core.js";
 
 const redis = Redis.fromEnv();
 const A_KEY = (uid) => `trav:${uid}:abilities`;
@@ -112,6 +112,13 @@ export async function onInteractionCreate(ix) {
   const locked = !!(await redis.get(LOCK_KEY(uid)));
   let rer = await getRerolls(uid);
 
+  
+export async function onMessageCreate(msg) {
+  if (msg.author.bot) return;
+  const parts = msg.content.trim().split(/\s+/);
+  const cmd = (parts[0] || "").toLowerCase();
+
+
   // Ensure we have a score set
   const raw = await redis.get(A_KEY(uid));
   let scores = raw ? JSON.parse(raw) : null;
@@ -161,6 +168,26 @@ export async function onInteractionCreate(ix) {
       });
     }
 
+     // --- NEW: !abilreset [@user]
+  if (cmd === "!abilreset") {
+    const target = msg.mentions.users.first() || msg.author;
+    const isAdmin = msg.member?.permissions?.has?.(PermissionsBitField.Flags.Administrator);
+
+    if (target.id !== msg.author.id && !isAdmin) {
+      return void msg.reply("🚫 You can only reset **your own** abilities. Admins may target others with a mention.");
+    }
+
+    const wiped = await resetAbilities(target.id);
+    const who = target.id === msg.author.id ? "your" : `<@${target.id}>'s`;
+
+    const e = new EmbedBuilder()
+      .setTitle("♻️ Ability Scores Reset")
+      .setDescription(`Cleared ${who} ability scores, modifiers, locks, and reroll counters.\nUse **!rollabilities** (or your sheet button) to generate fresh scores.`)
+      .setFooter({ text: `Cleared ${wiped} key${wiped === 1 ? "" : "s"}` })
+      .setColor("Blue");
+
+    return void msg.channel.send({ embeds: [e] });
+  }
     const rng = makeRng(`${uid}:${Date.now()}`);
     const newScores = rollAbilityArray(rng);
     await redis.set(A_KEY(uid), JSON.stringify(newScores));
