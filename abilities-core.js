@@ -1,4 +1,9 @@
 // abilities-core.js
+
+import { Redis } from "@upstash/redis";
+const redis = Redis.fromEnv();
+
+
 export function roll4d6DropLowest(rng) {
   const rolls = [0,0,0,0].map(() => 1 + Math.floor(rng() * 6)).sort((a,b)=>a-b);
   return rolls.slice(1).reduce((a,b)=>a+b,0); // drop lowest
@@ -23,6 +28,40 @@ export function modsFrom(scores) {
   return out;
 }
 
+export async function resetAbilities(userId) {
+  // likely direct keys we’ve used
+  const candidates = [
+    `trav:abilities:${userId}`,
+    `trav:abilities:scores:${userId}`,
+    `trav:abilities:mods:${userId}`,
+    `trav:abilities:locked:${userId}`,
+    `trav:abilities:rr:${userId}`,
+    `trav:abilities:per:${userId}`,
+  ];
+
+
+  const found = new Set(candidates);
+
+  try {
+    for (const p of patterns) {
+      const keys = await redis.keys(p);
+      for (const k of keys || []) found.add(k);
+    }
+  } catch {
+    // Upstash KEYS is allowed but if restricted, just ignore and proceed with candidates
+  }
+
+  const keysToDel = [...found].filter(Boolean);
+  if (keysToDel.length) {
+    await redis.del(...keysToDel);
+  }
+
+  return keysToDel.length;
+}
+  // also sweep patterns just in case naming drifted
+  const patterns = [
+    `trav:abilities:*:${userId}`,
+    `abilities:*:${userId}`,
 // Tiny RNG with seed fallback
 export function makeRng(seedStr = Date.now().toString()) {
   let h = 2166136261 >>> 0;
