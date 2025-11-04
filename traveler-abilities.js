@@ -1,219 +1,113 @@
-// traveler-abilities.js
-import {
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  PermissionsBitField,
-} from "discord.js";
+// abilities-core.js
 import { Redis } from "@upstash/redis";
-import {
-  resetAbilities,
-  makeRng,
-  rollAbilityArray,
-  modsFrom,
-} from "./abilities-core.js";
-
 const redis = Redis.fromEnv();
 
-const A_KEY   = (uid) => `trav:${uid}:abilities`;
-const M_KEY   = (uid) => `trav:${uid}:mods`;
-const R_KEY   = (uid) => `trav:${uid}:rerolls:abilities`;
-const LOCK_KEY= (uid) => `trav:${uid}:abilities:locked`;
+/**
+ * PRNG (mulberry32) seeded from a string
+ */
+function hash32(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
 
-function fmt(scores) {
-  const mods = modsFrom(scores);
-  const mk = (abbr, label = abbr) => {
-    const m = mods[abbr.toLowerCase()] ?? 0;
-    const sign = m >= 0 ? "+" : "−";
-    return `**${label}** ${scores[abbr]} (${sign}${Math.abs(m)})`;
+export function makeRng(seedStr = Date.now().toString()) {
+  let a = hash32(String(seedStr)) || 1;
+  return function rng() {
+    a |= 0;
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  return [
-    mk("STR", "STR"),
-    mk("DEX", "DEX"),
-    mk("CON", "CON"),
-    mk("INT", "INT"),
-    mk("WIS", "WIS"),
-    mk("CHA", "CHA"),
-  ].join("  •  ");
 }
 
-async function getRerolls(uid) {
-  return parseInt(await redis.get(R_KEY(uid))) || 0;
+/**
+ * Roll 4d6, drop lowest, return total (3..18)
+ */
+export function roll4d6dropLowest(rng) {
+  const rolls = [0, 0, 0, 0].map(() => 1 + Math.floor(rng() * 6));
+  rolls.sort((a, b) => a - b); // ascending
+  return rolls[1] + rolls[2] + rolls[3];
 }
 
-function rows(locked, rerollsUsed) {
-  const left = Math.max(0, 2 - (rerollsUsed || 0));
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("trav:abil:reroll")
-      .setLabel(`🎲 Reroll (${left} left)`)
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(locked || left <= 0),
-    new ButtonBuilder()
-      .setCustomId("trav:abil:lock")
-      .setLabel("🔒 Lock Scores")
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(locked)
-  );
-  return [row];
+/**
+ * Return an object of STR/DEX/CON/INT/WIS/CHA = score (3..18)
+ */
+export function rollAbilityArray(rng) {
+  return {
+    STR: roll4d6dropLowest(rng),
+    DEX: roll4d6dropLowest(rng),
+    CON: roll4d6dropLowest(rng),
+    INT: roll4d6dropLowest(rng),
+    WIS: roll4d6dropLowest(rng),
+    CHA: roll4d6dropLowest(rng),
+  };
 }
 
-// Try to update the original interaction message; otherwise reply/followUp;
-// finally, fall back to channel send so users still see output.
-async function safeUpdate(ix, payload) {
+/**
+ * Standard D&D-style modifier: floor((score - 10)/2)
+ */
+export function modForScore(score) {
+  return Math.floor((Number(score) - 10) / 2);
+}
+
+/**
+ * Given {STR,DEX,CON,INT,WIS,CHA}, return lowercase mods {str, dex, ...}
+ */
+export function modsFrom(scores) {
+  return {
+    str: modForScore(scores.STR),
+    dex: modForScore(scores.DEX),
+    con: modForScore(scores.CON),
+    int: modForScore(scores.INT),
+    wis: modForScore(scores.WIS),
+    cha: modForScore(scores.CHA),
+  };
+}
+
+/**
+ * Wipe all ability data for a user:
+ * - scores / mods / lock flag
+ * - reroll counters
+ * - any trav:abilities:* variants we’ve used
+ */
+export async function resetAbilities(userId) {
+  const candidates = [
+    `trav:${userId}:abilities`,
+    `trav:${userId}:mods`,
+    `trav:${userId}:abilities:locked`,
+    `trav:${userId}:rerolls:abilities`,
+    `trav:abilities:${userId}`,
+    `trav:abilities:scores:${userId}`,
+    `trav:abilities:mods:${userId}`,
+    `trav:abilities:locked:${userId}`,
+    `trav:abilities:rr:${userId}`,
+    `trav:abilities:per:${userId}`,
+  ];
+
+  // Try to find any stragglers by pattern (ignore if KEYS is restricted)
+  const patterns = [
+    `trav:${userId}:abilities:*`,
+    `trav:abilities:*:${userId}`,
+    `abilities:*:${userId}`,
+  ];
+
+  const toDelete = new Set(candidates);
+
   try {
-    if (ix.isRepliable()) {
-      if (ix.isButton()) {
-        try {
-          await ix.update(payload);
-          return;
-        } catch {/* fall through */}
-      }
-      if (ix.deferred || ix.replied) {
-        await ix.followUp(payload);
-      } else {
-        await ix.reply(payload);
-      }
-      return;
+    for (const p of patterns) {
+      const keys = await redis.keys(p);
+      for (const k of keys || []) toDelete.add(k);
     }
-  } catch { /* ignore */ }
-  try {
-    await ix.channel?.send(payload);
-  } catch { /* noop */ }
-}
-
-// ---------------------- MESSAGE COMMANDS ----------------------
-export async function onMessageCreate(msg) {
-  if (msg.author.bot) return;
-
-  const parts = msg.content.trim().split(/\s+/);
-  const cmd = (parts[0] || "").toLowerCase();
-  const uid = msg.author.id;
-
-  // Roll abilities + show UI
-  if (cmd === "!rollabilities" || cmd === "!abilities" || cmd === "!abilroll") {
-    const locked = !!(await redis.get(LOCK_KEY(uid)));
-    const rngSeed = `${uid}:${Date.now()}`;
-    const rng = makeRng(rngSeed);
-    const scores = rollAbilityArray(rng);
-
-    await redis.set(A_KEY(uid), JSON.stringify(scores));
-    await redis.set(M_KEY(uid), JSON.stringify(modsFrom(scores)));
-    // Only increment rerolls via the button; do not here.
-    const rer = await getRerolls(uid);
-
-    const e = new EmbedBuilder()
-      .setTitle("🧬 Ability Scores (4d6 drop lowest)")
-      .setDescription(fmt(scores))
-      .setFooter({
-        text: locked
-          ? "Locked — rerolls disabled"
-          : "You may reroll up to 2 times before locking",
-      })
-      .setColor(locked ? "Grey" : "Green");
-
-    return void msg.channel.send({ embeds: [e], components: rows(locked, rer) });
+  } catch {
+    // If KEYS is restricted on your plan, we’ll just delete known candidates
   }
 
-  // Reset abilities (self or @target if admin)
-  if (cmd === "!abilreset") {
-    const target = msg.mentions.users.first() || msg.author;
-    const isAdmin = msg.member?.permissions?.has?.(PermissionsBitField.Flags.Administrator);
-
-    if (target.id !== uid && !isAdmin) {
-      return void msg.reply("🚫 You can only reset **your own** abilities. Admins may target others with a mention.");
-    }
-
-    const wiped = await resetAbilities(target.id);
-    const who = target.id === uid ? "your" : `<@${target.id}>'s`;
-
-    const e = new EmbedBuilder()
-      .setTitle("♻️ Ability Scores Reset")
-      .setDescription(
-        `Cleared ${who} ability scores, modifiers, locks, and reroll counters.\n` +
-        `Use **!rollabilities** to generate fresh scores.`
-      )
-      .setFooter({ text: `Cleared ${wiped} key${wiped === 1 ? "" : "s"}` })
-      .setColor("Blue");
-
-    return void msg.channel.send({ embeds: [e] });
-  }
-}
-
-// ---------------------- BUTTON INTERACTIONS ----------------------
-export async function onInteractionCreate(ix) {
-  if (!ix.isButton()) return;
-  if (!ix.customId?.startsWith("trav:abil:")) return;
-
-  const uid = ix.user.id;
-  const locked = !!(await redis.get(LOCK_KEY(uid)));
-  let rer = await getRerolls(uid);
-
-  // Ensure scores exist
-  const raw = await redis.get(A_KEY(uid));
-  let scores = raw ? JSON.parse(raw) : null;
-  if (!scores) {
-    return void safeUpdate(ix, {
-      content: "You haven’t rolled abilities yet. Run `!rollabilities` first.",
-      ephemeral: true,
-    });
-  }
-
-  // Lock
-  if (ix.customId === "trav:abil:lock") {
-    if (locked) {
-      return void safeUpdate(ix, {
-        content: "Your abilities are already locked.",
-        ephemeral: true,
-      });
-    }
-    await redis.set(LOCK_KEY(uid), "1");
-    // refresh to be safe
-    scores = JSON.parse((await redis.get(A_KEY(uid))) || "{}");
-
-    const e = new EmbedBuilder()
-      .setTitle("🔒 Abilities Locked")
-      .setDescription(fmt(scores))
-      .setColor("Blue");
-
-    return void safeUpdate(ix, {
-      embeds: [e],
-      components: rows(true, rer),
-    });
-  }
-
-  // Reroll
-  if (ix.customId === "trav:abil:reroll") {
-    if (locked) {
-      return void safeUpdate(ix, {
-        content: "Already locked — rerolls disabled.",
-        ephemeral: true,
-      });
-    }
-    if (rer >= 2) {
-      return void safeUpdate(ix, {
-        content: "You’ve used both rerolls.",
-        ephemeral: true,
-      });
-    }
-
-    const rng = makeRng(`${uid}:${Date.now()}`);
-    const newScores = rollAbilityArray(rng);
-    await redis.set(A_KEY(uid), JSON.stringify(newScores));
-    await redis.set(M_KEY(uid), JSON.stringify(modsFrom(newScores)));
-    await redis.set(R_KEY(uid), rer + 1);
-    rer = rer + 1;
-
-    const e = new EmbedBuilder()
-      .setTitle(`🎲 Reroll #${rer}`)
-      .setDescription(fmt(newScores))
-      .setFooter({ text: `${2 - rer} reroll(s) remaining` })
-      .setColor("Orange");
-
-    return void safeUpdate(ix, {
-      embeds: [e],
-      components: rows(false, rer),
-    });
-  }
+  const list = [...toDelete].filter(Boolean);
+  if (list.length) await redis.del(...list);
+  return list.length;
 }
