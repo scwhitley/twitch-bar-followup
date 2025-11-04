@@ -9,6 +9,7 @@ import fs from "fs";
 import axios from "axios";
 import { fetch as undiciFetch } from "undici";
 import { Redis } from "@upstash/redis";
+import { deDupeGuard } from "./economy/econ-core.js";
 
 // ---------- Core / Shared (keep if you still use them elsewhere) ----------
 import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
@@ -101,52 +102,72 @@ const client = new Client({
 
 // --- Unified dispatcher: route every message to each handler safely ---
 client.on("messageCreate", async (msg) => {
-  const run = async (fn) => {
-    try { await fn?.(msg); } catch (e) { console.error("[handler error]", fn?.name, e); }
+  if (msg.author?.bot) return;
+
+  // Run a handler once per message per tag (30s TTL)
+  const run = async (fn, tag) => {
+    if (!fn) return;
+    try {
+      const ok = await deDupeGuard(`m:${msg.id}:${tag}`, 30);
+      if (!ok) return; // this handler already ran for this message
+      await fn(msg);
+    } catch (e) {
+      console.error("[handler error]", tag || fn?.name, e);
+    }
   };
 
   // Traveler creation + confirm
-  await run(onTravelerMsg);
-  await run(onTravelerConfirmMsg);
+  await run(onTravelerMsg,        "traveler");
+  await run(onTravelerConfirmMsg, "traveler-confirm");
 
   // Party + Workboard
-  await run(onPartyMsg);
-  await run(onWorkboardMsg);
+  await run(onPartyMsg,      "party");
+  await run(onWorkboardMsg,  "workboard");
 
   // Economy
-  await run(onBarMsg);
-  await run(onBankMsg);
-  await run(onInventoryMsg);
-  await run(onAdminEconMsg);
+  await run(onBarMsg,        "vendor-bar");
+  await run(onBankMsg,       "bank");
+  await run(onInventoryMsg,  "inventory");
+  await run(onAdminEconMsg,  "admin-econ");
 
-  // Abilities + Skills + Conditions
-  await run(onAbilitiesMsg);
-  await run(onSkillsMsg);
-  await run(onCondsMsg);
-  await run(onChecksMsg);
+  // Abilities + Skills + Conditions + Checks
+  await run(onAbilitiesMsg,  "abilities");
+  await run(onSkillsMsg,     "skills");
+  await run(onCondsMsg,      "conditions");
+  await run(onChecksMsg,     "checks");
 
   // Dice
-  await run(onDiceMsg);
+  await run(onDiceMsg,       "dice");
 });
 
 client.on("interactionCreate", async (ix) => {
-  const runI = async (fn) => {
-    try { await fn?.(ix); } catch (e) { console.error("[interaction error]", fn?.name, e); }
+  // Run a handler once per interaction per tag (30s TTL)
+  const runI = async (fn, tag) => {
+    if (!fn) return;
+    try {
+      const id = ix.id || `${ix.user?.id}:${ix.customId || "unknown"}`;
+      const ok = await deDupeGuard(`i:${id}:${tag}`, 30);
+      if (!ok) return; // already handled
+      await fn(ix);
+    } catch (e) {
+      console.error("[interaction error]", tag || fn?.name, e);
+    }
   };
 
   // Traveler interactions (sheet buttons + confirm button)
-  await runI(onTravelerInteraction);
-  await runI(onTravelerConfirmInt);
+  await runI(onTravelerInteraction,  "traveler-int");
+  await runI(onTravelerConfirmInt,   "traveler-confirm-int");
 
   // Party + Workboard interactions
-  await runI(onWorkboardIx);
+  await runI(onWorkboardIx,         "workboard-int");
 
-  // Abilities + Skills + Conditions interactions
-  await runI(onAbilitiesIx);
-  await runI(onSkillsIx);
-  await runI(onCondsIx);
-  await runI(onChecksIx);
+  // Abilities + Skills + Conditions + Checks interactions
+  await runI(onAbilitiesIx,         "abilities-int");
+  await runI(onSkillsIx,            "skills-int");
+  await runI(onCondsIx,             "conditions-int");
+  await runI(onChecksIx,            "checks-int");
 });
+
 
 // One ready log (use once to avoid dupes on hot-reload)
 client.once("ready", () => console.log(`Logged in as ${client.user.tag}`));
