@@ -1,14 +1,66 @@
 // abilities-core.js
-
 import { Redis } from "@upstash/redis";
 const redis = Redis.fromEnv();
 
+// ---- Redis keys used by the abilities UI ----
+const A_KEY    = (uid) => `trav:${uid}:abilities`;
+const M_KEY    = (uid) => `trav:${uid}:mods`;
+const R_KEY    = (uid) => `trav:${uid}:rerolls:abilities`;
+const LOCK_KEY = (uid) => `trav:${uid}:abilities:locked`;
 
-export function roll4d6DropLowest(rng) {
-  const rolls = [0,0,0,0].map(() => 1 + Math.floor(rng() * 6)).sort((a,b)=>a-b);
-  return rolls.slice(1).reduce((a,b)=>a+b,0); // drop lowest
+/** Reset a user's abilities: scores, mods, rerolls, lock. Returns count of keys cleared. */
+export async function resetAbilities(userId) {
+  const keys = [A_KEY(userId), M_KEY(userId), R_KEY(userId), LOCK_KEY(userId)];
+  let cleared = 0;
+  for (const k of keys) {
+    try {
+      await redis.del(k);
+      cleared++;
+    } catch {
+      // ignore per-key failure so one bad del doesn't nuke the whole call
+    }
+  }
+  return cleared;
 }
 
+// ---- RNG helpers (xmur3 hash -> mulberry32 PRNG) ----
+function xmur3(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return function () {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h ^= h >>> 16) >>> 0;
+  };
+}
+
+function mulberry32(a) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Make a seeded RNG: rng() -> [0,1). */
+export function makeRng(seedStr = Date.now().toString()) {
+  const seed = xmur3(String(seedStr))();
+  return mulberry32(seed);
+}
+
+// ---- Ability rolling (4d6 drop lowest) ----
+function roll4d6DropLowest(rng) {
+  const rolls = [0, 0, 0, 0].map(() => 1 + Math.floor(rng() * 6));
+  rolls.sort((a, b) => a - b);
+  return rolls[1] + rolls[2] + rolls[3];
+}
+
+/** Roll a full 6-ability array. Returns { STR, DEX, CON, INT, WIS, CHA } */
 export function rollAbilityArray(rng) {
   return {
     STR: roll4d6DropLowest(rng),
@@ -20,56 +72,19 @@ export function rollAbilityArray(rng) {
   };
 }
 
+/** D&D-style modifier from a score. */
+export function modFromScore(score) {
+  return Math.floor((Number(score) - 10) / 2);
+}
+
+/** Mods object keyed in lowercase for UI: { str, dex, con, int, wis, cha } */
 export function modsFrom(scores) {
-  const out = {};
-  for (const [k,v] of Object.entries(scores||{})) {
-    out[k.toLowerCase()] = Math.floor((v - 10) / 2);
-  }
-  return out;
-}
-
-export async function resetAbilities(userId) {
-  // likely direct keys we’ve used
-  const candidates = [
-    `trav:abilities:${userId}`,
-    `trav:abilities:scores:${userId}`,
-    `trav:abilities:mods:${userId}`,
-    `trav:abilities:locked:${userId}`,
-    `trav:abilities:rr:${userId}`,
-    `trav:abilities:per:${userId}`,
-  ];
-
-
-  const found = new Set(candidates);
-
-  try {
-    for (const p of patterns) {
-      const keys = await redis.keys(p);
-      for (const k of keys || []) found.add(k);
-    }
-  } catch {
-    // Upstash KEYS is allowed but if restricted, just ignore and proceed with candidates
-  }
-
-  const keysToDel = [...found].filter(Boolean);
-  if (keysToDel.length) {
-    await redis.del(...keysToDel);
-  }
-
-  return keysToDel.length;
-}
-  // also sweep patterns just in case naming drifted
-  const patterns = [
-    `trav:abilities:*:${userId}`,
-    `abilities:*:${userId}`,
-// Tiny RNG with seed fallback
-export function makeRng(seedStr = Date.now().toString()) {
-  let h = 2166136261 >>> 0;
-  for (let i=0;i<seedStr.length;i++) h = Math.imul(h ^ seedStr.charCodeAt(i), 16777619);
-  return function rand() {
-    h += 0x6D2B79F5;
-    let t = Math.imul(h ^ h >>> 15, 1 | h);
-    t ^= t + Math.imul(t ^ t >>> 7, 61 | t);
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  return {
+    str: modFromScore(scores.STR),
+    dex: modFromScore(scores.DEX),
+    con: modFromScore(scores.CON),
+    int: modFromScore(scores.INT),
+    wis: modFromScore(scores.WIS),
+    cha: modFromScore(scores.CHA),
   };
 }
