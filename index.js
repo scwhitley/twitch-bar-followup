@@ -2190,7 +2190,7 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
   return res.sendStatus(200);
 });
 
-/ after client initialization, before login:
+// after client initialization, before login:
 await reloadTrialData();
 const ts = getTrialStatus();
 console.log("[TRIAL LOADER]", ts);
