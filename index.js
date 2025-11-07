@@ -1,4 +1,5 @@
 // index.js
+console.log("[BOOT] process.cwd() =", process.cwd());
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
