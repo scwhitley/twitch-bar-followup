@@ -31,6 +31,10 @@ import {
   onInteractionCreate as onTravelerConfirmInt,
 } from "./traveler-confirm.js";
 
+// ---------- Forge ----------
+import { onMessageCreate as onForgeMsg } from "./forge-command.js";
+
+
 // ---------- Abilities + Skills ----------
 import { onMessageCreate as onAbilitiesMsg, onInteractionCreate as onAbilitiesIx } from "./traveler-abilities.js";
 import { onMessageCreate as onSkillsMsg,    onInteractionCreate as onSkillsIx }    from "./traveler-skills.js";
