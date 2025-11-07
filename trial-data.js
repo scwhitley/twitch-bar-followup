@@ -6,7 +6,6 @@ import { fileURLToPath, pathToFileURL } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ---------- State ----------
 let QUESTIONS = [];
 let _status = {
   loaded: false,
@@ -16,20 +15,22 @@ let _status = {
   pathsTried: [],
 };
 
-// ---------- Helpers ----------
 function resetStatus() {
   _status = { loaded: false, from: "", count: 0, reason: "Not loaded", pathsTried: [] };
 }
-
 function recordTry(p) {
   if (!_status.pathsTried.includes(p)) _status.pathsTried.push(p);
+}
+function resolveCandidate(p) {
+  if (!p) return null;
+  return path.isAbsolute(p) ? p : path.join(__dirname, p);
 }
 
 async function tryLoadModule(absPath) {
   recordTry(absPath);
   if (!fs.existsSync(absPath)) return false;
   const modUrl = pathToFileURL(absPath).href;
-  const mod = await import(modUrl);
+  const mod = await import(modUrl); // only for .mjs/.js
   const arr = mod.QUESTIONS;
   if (Array.isArray(arr) && arr.length > 0) {
     QUESTIONS = arr;
@@ -42,27 +43,23 @@ async function tryLoadModule(absPath) {
 async function tryLoadJSON(absPath) {
   recordTry(absPath);
   if (!fs.existsSync(absPath)) return false;
-  const raw = fs.readFileSync(absPath, "utf8");
-  const parsed = JSON.parse(raw);
-  if (Array.isArray(parsed) && parsed.length > 0) {
-    QUESTIONS = parsed;
-    _status = { loaded: true, from: absPath, count: parsed.length, reason: "OK", pathsTried: _status.pathsTried };
-    return true;
-  } else if (Array.isArray(parsed?.QUESTIONS) && parsed.QUESTIONS.length > 0) {
-    QUESTIONS = parsed.QUESTIONS;
-    _status = { loaded: true, from: absPath, count: QUESTIONS.length, reason: "OK", pathsTried: _status.pathsTried };
-    return true;
+  try {
+    const raw = fs.readFileSync(absPath, "utf8");
+    const parsed = JSON.parse(raw);
+    const arr = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.QUESTIONS) ? parsed.QUESTIONS : null;
+    if (Array.isArray(arr) && arr.length > 0) {
+      QUESTIONS = arr;
+      _status = { loaded: true, from: absPath, count: arr.length, reason: "OK", pathsTried: _status.pathsTried };
+      return true;
+    }
+    _status.reason = "File parsed but contained no QUESTIONS";
+    return false;
+  } catch (e) {
+    _status.reason = `JSON parse error: ${e.message}`;
+    return false;
   }
-  return false;
 }
 
-function resolveCandidate(p) {
-  if (!p) return null;
-  if (path.isAbsolute(p)) return p;
-  return path.join(__dirname, p);
-}
-
-// ---------- Public API ----------
 export function getTrialStatus() {
   return { ..._status };
 }
@@ -70,16 +67,17 @@ export function getTrialStatus() {
 export async function reloadTrialData() {
   resetStatus();
 
-  // 1) Env override first
   const envPath = process.env.TRIAL_QUESTIONS_PATH;
   if (envPath) {
     const abs = resolveCandidate(envPath);
-    // Try module then JSON
-    if (await tryLoadModule(abs)) return true;
-    if (await tryLoadJSON(abs)) return true;
+    if (abs.endsWith(".mjs") || abs.endsWith(".js")) {
+      if (await tryLoadModule(abs)) return true;
+    } else if (abs.endsWith(".json")) {
+      if (await tryLoadJSON(abs)) return true;
+    }
   }
 
-  // 2) Default candidates (module first, then json)
+  // Default search order (modules first, then JSON)
   const candidates = [
     "./trial-questions.mjs",
     "./trial-questions.js",
@@ -92,18 +90,16 @@ export async function reloadTrialData() {
   for (const p of candidates) {
     if (p.endsWith(".mjs") || p.endsWith(".js")) {
       if (await tryLoadModule(p)) return true;
-    } else {
+    } else if (p.endsWith(".json")) {
       if (await tryLoadJSON(p)) return true;
     }
   }
 
-  // Nothing loaded
   _status.reason = "No valid questions file found or file is empty.";
   return false;
 }
 
-// Top-level load on boot (Node 20+ supports TLA)
+// Load once on boot
 await reloadTrialData();
 
-// Export live reference (importer reads current array)
 export { QUESTIONS };
