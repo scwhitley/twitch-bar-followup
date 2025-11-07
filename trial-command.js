@@ -20,23 +20,34 @@ async function withClickLock(uid, fn) {
   finally { await redis.del(LKEY(uid)); }
 }
 
-function progressBar(i, total) {
-  const filled = Math.min(total, Math.max(0, i));
-  const on = "▰".repeat(filled);
-  const off = "▱".repeat(total - filled);
+// ---------- NEW: nicer progress meter ----------
+function progressBar(completed, total) {
+  const full = Math.max(0, Math.min(total, completed));
+  const on = "▰".repeat(full);
+  const off = "▱".repeat(total - full);
   return on + off;
 }
 
 function buildQuestionEmbed(qIndex, tally) {
+  const total = QUESTIONS.length;              // 15
+  const answered = qIndex;                     // how many already answered
+  const pct = Math.round((answered / total) * 100);
   const q = QUESTIONS[qIndex];
-  const title = `Sith Trial — Question ${qIndex + 1}/15`;
-  const bar = progressBar(qIndex, 15);
+
+  const bar = progressBar(answered, total);
   const counts = `Sith: **${tally.sith}** • Jedi: **${tally.jedi}** • Grey: **${tally.grey}**`;
+
+  const desc = [
+    `**Progress:** ${bar}  ${answered}/${total} · ${pct}%`,
+    "",
+    q.prompt
+  ].join("\n");
+
   return {
     embed: new EmbedBuilder()
-      .setTitle(title)
-      .setDescription(q.prompt)
-      .setFooter({ text: `Progress ${bar}  |  ${counts}` })
+      .setTitle(`Sith Trial — Question ${qIndex + 1}/${total}`)
+      .setDescription(desc)
+      .setFooter({ text: counts })
       .setColor("DarkRed"),
     components: [
       new ActionRowBuilder().addComponents(
@@ -60,18 +71,18 @@ function decideAlignment(tally, tieBreak = "randomAmongTop") {
   arr.sort((a,b) => b[1]-a[1]);
 
   if (arr[0][1] > arr[1][1]) return arr[0][0]; // clear winner
-  // tie among top
   const topScore = arr[0][1];
   const top = arr.filter(([_,v]) => v === topScore).map(([k]) => k);
 
   if (tieBreak === "preferSith" && top.includes("sith")) return "sith";
   if (tieBreak === "preferJedi" && top.includes("jedi")) return "jedi";
   if (tieBreak === "preferGrey" && top.includes("grey")) return "grey";
-  // default random among top
   return top[Math.floor(Math.random() * top.length)];
 }
 
 function buildResultEmbed(result) {
+  const total = QUESTIONS.length;
+  const bar = progressBar(total, total);
   const { alignment, score } = result;
   const color = alignment === "sith" ? "DarkRed" : alignment === "jedi" ? "Blue" : "Grey";
   const flavor =
@@ -83,6 +94,7 @@ function buildResultEmbed(result) {
     .setTitle(`Trial Complete — ${alignment.toUpperCase()}`)
     .setDescription(flavor)
     .addFields(
+      { name: "Progress", value: `${bar}  ${total}/${total} · 100%` },
       { name: "Tally", value: `Sith: **${score.sith}** | Jedi: **${score.jedi}** | Grey: **${score.grey}**` },
       { name: "Next", value: "Run **!forge** to construct your saber." }
     )
@@ -165,7 +177,7 @@ export async function onInteractionCreate(ix) {
     session.tally[opt.align] = (session.tally[opt.align] || 0) + 1;
     session.answers.push({ qid: qIndex, align: opt.align });
 
-    if (qIndex < 14) {
+    if (qIndex < QUESTIONS.length - 1) {
       session.qIndex = qIndex + 1;
       await redis.set(SKEY(uid), JSON.stringify(session));
 
