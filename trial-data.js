@@ -1,4 +1,4 @@
-// trial-data.js (robust loader for /data or root JSONs)
+// trial-data.js
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -6,79 +6,93 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-// Try multiple candidate locations so it “just works” whether
-// your JSONs are in src/data, project-root/data, or directly in src/root.
-const CANDIDATES = {
-  questions: [
-    "./data/trial-questions.json",     // src/data/...
-    "../data/trial-questions.json",    // project-root/data/...
-    "./trial-questions.json",          // src/...
-    "../trial-questions.json",         // project-root/...
-  ],
-  forge: [
-    "./data/forge-matrix.json",
-    "../data/forge-matrix.json",
-    "./forge-matrix.json",
-    "../forge-matrix.json",
-  ],
+// ---- tolerant JSON loader (tries /data then root) ----
+function loadJson(relFromModule) {
+  try {
+    const p = path.join(__dirname, relFromModule);
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+let QUESTIONS = loadJson("./data/trial-questions.json");
+if (!Array.isArray(QUESTIONS) || QUESTIONS.length === 0) {
+  QUESTIONS = loadJson("./trial-questions.json") || [];
+}
+if (!Array.isArray(QUESTIONS)) QUESTIONS = [];
+
+export { QUESTIONS };
+
+// Handy getter w/ useful error if empty/out-of-range
+export function getQuestion(i) {
+  if (!Array.isArray(QUESTIONS) || QUESTIONS.length === 0) {
+    throw new Error("[trial] No questions loaded (check JSON path/export)");
+  }
+  if (i < 0 || i >= QUESTIONS.length) {
+    throw new Error(`[trial] Question index out of range: ${i}/${QUESTIONS.length}`);
+  }
+  return QUESTIONS[i];
+}
+
+// ---- Forge matrix + helper (used by forge-command.js) ----
+export const FORGE_MATRIX = {
+  colors: {
+    sith: ["Crimson", "Blood Red", "Dark Magenta"],
+    jedi: ["Blue", "Green", "Yellow"],
+    grey: ["White", "Silver", "Smoke"],
+  },
+  forms: {
+    sith: ["Crossguard", "Scimitar", "Curved Hilt"],
+    jedi: ["Standard", "Shoto", "Staff"],
+    grey: ["Dual-Phase", "Variable", "Split-Saber"],
+  },
+  emitters: {
+    sith: ["Fang", "Razor", "Blight"],
+    jedi: ["Sentinel", "Beacon", "Harmony"],
+    grey: ["Balance", "Mirror", "Veil"],
+  },
+  cores: {
+    sith: ["Synthetic Kyber", "Onyx Core", "Rage Focus"],
+    jedi: ["Kyber Crystal", "Lumen Core", "Calm Focus"],
+    grey: ["Attuned Shard", "Neutral Core", "Shroud Focus"],
+  },
+  adjectives: {
+    sith: ["Barbed", "Vicious", "Seething"],
+    jedi: ["Serene", "Stalwart", "Guiding"],
+    grey: ["Austere", "Measured", "Veiled"],
+  },
+  materials: {
+    sith: ["Charred Durasteel", "Obsidian Alloy", "Hemosteel"],
+    jedi: ["Aureline Steel", "Polished Brylark", "Temple Brass"],
+    grey: ["Gunmetal Alloy", "Smoked Steel", "Runic Composite"],
+  },
+  exotics: {
+    chance: 0.03,
+    colors: ["Amethyst", "Black-Core Red", "Darksilver"],
+    forms: ["Tri-Saber", "Chain-Saber", "Switchblade Pike"],
+    descriptions: [
+      "Anomalous resonance hums through the hilt.",
+      "A forbidden design stolen from ancient holocrons.",
+      "The blade flickers like a heartbeat in the Shroud.",
+    ],
+  },
 };
 
-function firstExistingJSON(relPaths) {
-  for (const rel of relPaths) {
-    const full = path.resolve(__dirname, rel);
-    try {
-      const raw = fs.readFileSync(full, "utf8");
-      const data = JSON.parse(raw);
-      return { data, path: full };
-    } catch (e) {
-      // swallow and try next
-    }
-  }
-  return { data: null, path: null };
-}
-
-const q = firstExistingJSON(CANDIDATES.questions);
-const f = firstExistingJSON(CANDIDATES.forge);
-
-export const QUESTIONS = q.data || [];
-export const FORGE_MATRIX = f.data || {};
-
-if (!Array.isArray(QUESTIONS) || QUESTIONS.length === 0) {
-  console.error(
-    "[trial] No questions loaded. Checked paths:",
-    CANDIDATES.questions.map(p => path.resolve(__dirname, p))
-  );
-}
-if (!FORGE_MATRIX || Object.keys(FORGE_MATRIX).length === 0) {
-  console.error(
-    "[trial] No forge matrix loaded. Checked paths:",
-    CANDIDATES.forge.map(p => path.resolve(__dirname, p))
-  );
-}
-
-
-// Helper: return a normalized parts pool for a given alignment
 export function forgePoolFor(alignment = "grey") {
   const key = String(alignment || "grey").toLowerCase();
-  const m = FORGE_MATRIX || {};
+  const m = FORGE_MATRIX;
 
-  const colors     = m.colors?.[key]      || m.colors?.grey      || m.colors     || [];
-  const forms      = m.forms?.[key]       || m.forms?.grey       || m.forms      || [];
-  const emitters   = m.emitters?.[key]    || m.emitters?.grey    || m.emitters   || [];
-  const cores      = m.cores?.[key]       || m.cores?.grey       || m.cores      || [];
-  const adjectives = m.adjectives?.[key]  || m.adjectives?.grey  || m.adjectives || [];
-  const materials  = m.materials?.[key]   || m.materials?.grey   || m.materials  || [];
+  const pick = (obj) =>
+    (obj?.[key] ?? obj?.grey ?? obj ?? []);
 
-  // keep exotics available for the caller; m.exotics = { chance, colors, forms, descriptions, ... }
-  return { colors, forms, emitters, cores, adjectives, materials, exotics: m.exotics || null };
+  return {
+    colors:     pick(m.colors),
+    forms:      pick(m.forms),
+    emitters:   pick(m.emitters),
+    cores:      pick(m.cores),
+    adjectives: pick(m.adjectives),
+    materials:  pick(m.materials),
+    exotics:    m.exotics || null,
+  };
 }
-
-// Optional: quick visibility on what succeeded
-console.log(
-  `[trial] QUESTIONS: ${Array.isArray(QUESTIONS) ? QUESTIONS.length : 0} loaded`,
-  q.path ? `from ${q.path}` : "(not found)"
-);
-console.log(
-  `[trial] FORGE_MATRIX: ${Object.keys(FORGE_MATRIX || {}).length} keys`,
-  f.path ? `from ${f.path}` : "(not found)"
-);
