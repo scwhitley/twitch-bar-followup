@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "id": "Q1",
+      "category": "Ideological",
+      "prompt": "What does the Force mean to you?",
+      "options": [
+        { "text": "A weapon to command and bend reality.", "align": "sith" },
+        { "text": "A current that flows through all living things.", "align": "jedi" },
+        { "text": "A paradox — both peace and chaos.", "align": "grey" },
+        { "text": "A mystery that serves whoever understands it best.", "align": "sith" }
+      ]
+    },
+    {
+      "id": "Q2",
+      "category": "Ideological",
+      "prompt": "True strength comes from...",
+      "options": [
+        { "text": "Discipline and control.", "align": "jedi" },
+        { "text": "Passion and will.", "align": "sith" },
+        { "text": "Balance between desire and restraint.", "align": "grey" },
+        { "text": "The lessons of failure.", "align": "jedi" }
+      ]
+    },
+    {
+      "id": "Q3",
+      "category": "Ideological",
+      "prompt": "The Jedi Code teaches serenity. You believe...",
+      "options": [
+        { "text": "Serenity is weakness disguised as virtue.", "align": "sith" },
+        { "text": "It’s the path to clarity and power through peace.", "align": "jedi" },
+        { "text": "Peace and emotion can coexist.", "align": "grey" },
+        { "text": "Codes are cages. Power answers to no creed.", "align": "sith" }
+      ]
+    },
+    {
+      "id": "Q4",
+      "category": "Ideological",
+      "prompt": "Power should be used to...",
+      "options": [
+        { "text": "Protect those who cannot defend themselves.", "align": "jedi" },
+        { "text": "Shape destiny to your own design.", "align": "sith" },
+        { "text": "Maintain balance between creation and destruction.", "align": "grey" },
+        { "text": "Prove your worth to those who doubt you.", "align": "sith" }
+      ]
+    },
+    {
+      "id": "Q5",
+      "category": "Ideological",
+      "prompt": "What is corruption to you?",
+      "options": [
+        { "text": "The natural cost of power.", "align": "sith" },
+        { "text": "A disease born from fear and pride.", "align": "jedi" },
+        { "text": "A test — overcome it or embrace it.", "align": "grey" },
+        { "text": "An illusion; the Force is beyond morality.", "align": "grey" }
+      ]
+    },
+    {
+      "id": "Q6",
+      "category": "Situational",
+      "prompt": "Your ally lies wounded during battle. You...",
+      "options": [
+        { "text": "Leave them. The strong survive.", "align": "sith" },
+        { "text": "Risk your life to save them.", "align": "jedi" },
+        { "text": "Finish the battle, then aid them if you can.", "align": "grey" },
+        { "text": "Order another to rescue them.", "align": "sith" }
+      ]
+    },
+    {
+      "id": "Q7",
+      "category": "Situational",
+      "prompt": "A traitor in your ranks is revealed. You...",
+      "options": [
+        { "text": "Strike them down immediately.", "align": "sith" },
+        { "text": "Seek to understand why they betrayed you.", "align": "jedi" },
+        { "text": "Let the Force decide their fate.", "align": "grey" },
+        { "text": "Exploit them; betrayal reveals opportunity.", "align": "sith" }
+      ]
+    },
+    {
+      "id": "Q8",
+      "category": "Situational",
+      "prompt": "You find an ancient Sith holocron. What do you do?",
+      "options": [
+        { "text": "Study it — knowledge is power.", "align": "sith" },
+        { "text": "Destroy it — corruption spreads quickly.", "align": "jedi" },
+        { "text": "Examine it cautiously, learn without yielding.", "align": "grey" },
+        { "text": "Hide it where only you can reach it.", "align": "grey" }
+      ]
+    },
+    {
+      "id": "Q9",
+      "category": "Situational",
+      "prompt": "A Jedi Master offers you redemption.",
+      "options": [
+        { "text": "Strike them down — redemption is a lie.", "align": "sith" },
+        { "text": "Accept, even at the cost of your pride.", "align": "jedi" },
+        { "text": "Refuse without anger. Forge your own path.", "align": "grey" },
+        { "text": "Feign acceptance, then strike later.", "align": "sith" }
+      ]
+    },
+    {
+      "id": "Q10",
+      "category": "Situational",
+      "prompt": "A city burns because of your failure. You...",
+      "options": [
+        { "text": "Feel nothing. The weak perish.", "align": "sith" },
+        { "text": "Swear to rebuild it, whatever the cost.", "align": "jedi" },
+        { "text": "Accept the loss and learn from it.", "align": "grey" },
+        { "text": "Use the ashes to build anew, stronger.", "align": "grey" }
+      ]
+    },
+    {
+      "id": "Q11",
+      "category": "Instinctive",
+      "prompt": "What emotion drives you most?",
+      "options": [
+        { "text": "Rage — it focuses me.", "align": "sith" },
+        { "text": "Compassion — it anchors me.", "align": "jedi" },
+        { "text": "Curiosity — it fuels me.", "align": "grey" },
+        { "text": "Fear — awareness begins there.", "align": "sith" }
+      ]
+    },
+    {
+      "id": "Q12",
+      "category": "Instinctive",
+      "prompt": "When you look upon your enemies, you feel...",
+      "options": [
+        { "text": "Pity. They are lost.", "align": "jedi" },
+        { "text": "Exhilaration. Conflict defines existence.", "align": "sith" },
+        { "text": "Understanding. Every enemy is a reflection.", "align": "grey" },
+        { "text": "Satisfaction. Their struggle proves your power.", "align": "sith" }
+      ]
+    },
+    {
+      "id": "Q13",
+      "category": "Instinctive",
+      "prompt": "Death is...",
+      "options": [
+        { "text": "A tool.", "align": "sith" },
+        { "text": "A natural transition.", "align": "jedi" },
+        { "text": "Neither end nor beginning — only a whisper.", "align": "grey" },
+        { "text": "The final victory over weakness.", "align": "sith" }
+      ]
+    },
+    {
+      "id": "Q14",
+      "category": "Instinctive",
+      "prompt": "The galaxy must be...",
+      "options": [
+        { "text": "United under an unbreakable will.", "align": "sith" },
+        { "text": "Balanced through harmony.", "align": "jedi" },
+        { "text": "Left to find its own equilibrium.", "align": "grey" },
+        { "text": "Ruled by those who dare.", "align": "sith" }
+      ]
+    },
+    {
+      "id": "Q15",
+      "category": "Instinctive",
+      "prompt": "The Force offers you anything. You ask for...",
+      "options": [
+        { "text": "Power without limit.", "align": "sith" },
+        { "text": "Wisdom beyond death.", "align": "jedi" },
+        { "text": "Truth — even if it shatters you.", "align": "grey" },
+        { "text": "Freedom from destiny.", "align": "grey" }
+      ]
+    }
+  ],
+  "scoring": {
+    "tieBreak": "randomAmongTop"
+  }
+}
