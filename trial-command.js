@@ -1,9 +1,10 @@
-// trial-command.js
+// top of trial-command.js
 import {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } from "discord.js";
 import { Redis } from "@upstash/redis";
-import { QUESTIONS, reloadTrialData, getTrialStatus } from "./trial-data.js";
+import { QUESTIONS, getTrialStatus, reloadTrialData } from "./trial-data.js";
+
 
 const redis = Redis.fromEnv();
 
@@ -130,33 +131,38 @@ export async function onMessageCreate(msg) {
   const [cmd] = msg.content.trim().toLowerCase().split(/\s+/);
 
   // Debug/status
-  if (cmd === "!trialdebug") {
-    const st = getTrialStatus();
-    const e = new EmbedBuilder()
-      .setTitle("Trial Data Status")
-      .setDescription(st.ok ? "✅ Loaded" : "❌ Not Loaded")
-      .addFields(
-        { name: "Loaded From", value: st.loadedFrom || "—", inline: false },
-        { name: "Question Count", value: String(st.count), inline: true },
-        { name: "Reason", value: st.reason || "—", inline: true },
-        { name: "Paths Tried", value: (st.pathTried || []).map(p => `• ${p}`).join("\n").slice(0, 1024) || "—", inline: false },
-      )
-      .setColor(st.ok ? "Green" : "Red");
-    return void msg.channel.send({ embeds: [e] });
-  }
+if (cmd === "!trialdebug") {
+  const s = getTrialStatus();
+  const e = new EmbedBuilder()
+    .setTitle("Trial Data Status")
+    .addFields(
+      { name: "Loaded", value: s.loaded ? "✅ Loaded" : "❌ Not Loaded", inline: true },
+      { name: "Loaded From", value: s.from || "—" },
+      { name: "Question Count", value: String(s.count || 0), inline: true },
+      { name: "Reason", value: s.reason || "—" },
+      { name: "Paths Tried", value: (s.pathsTried?.length ? s.pathsTried.map(p => `• ${p}`).join("\n") : "—") }
+    )
+    .setColor(s.loaded ? "Green" : "Red");
+  return void msg.channel.send({ embeds: [e] });
+}
 
   // Manual reload
-  if (cmd === "!trialreload") {
-    const ok = reloadTrialData();
-    const st = getTrialStatus();
-    if (!ok) {
-      return void msg.reply(
-        "Trial data not loaded. Make sure your `trial-questions.json` exists in one of these:\n" +
-        (st.pathTried || []).map(p => `• ${p}`).join("\n")
-      );
-    }
-    return void msg.reply(`Trial questions loaded: **${st.count}** (from \`${st.loadedFrom}\`)`);
-  }
+  / inside onMessageCreate(msg) in trial-command.js
+if (cmd === "!trialreload") {
+  const ok = await reloadTrialData();
+  const s = getTrialStatus();
+  const e = new EmbedBuilder()
+    .setTitle(ok ? "🔄 Trial Data Reloaded" : "❌ Trial Data Reload Failed")
+    .addFields(
+      { name: "Loaded", value: ok ? "Yes" : "No", inline: true },
+      { name: "From", value: s.from || "—" },
+      { name: "Count", value: String(s.count), inline: true },
+      { name: "Reason", value: s.reason || "—" },
+      { name: "Paths Tried", value: (s.pathsTried?.length ? s.pathsTried.map(p => `• ${p}`).join("\n") : "—") }
+    )
+    .setColor(ok ? "Green" : "Red");
+  return void msg.channel.send({ embeds: [e] });
+}
 
   if (cmd === "!trial") {
     // Quick guard
