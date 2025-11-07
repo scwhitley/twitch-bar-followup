@@ -152,6 +152,23 @@ export async function onMessageCreate(msg) {
       );
     }
 
+    // inside export async function onMessageCreate(msg) { ... }
+if (cmd === "!trialreload") {
+  const ok = await ensureQuestionsLoaded();
+  return void msg.reply(ok ? "✅ Trial data loaded." : "❌ Trial data NOT loaded.");
+}
+
+if (cmd === "!trialdebug") {
+  const loaded = await ensureQuestionsLoaded();
+  const total = totalQuestions();
+  return void msg.reply(
+    loaded
+      ? `🧪 Trial loaded with **${total}** questions.`
+      : "🧪 Trial NOT loaded."
+  );
+}
+
+
     // If they’ve already completed the trial, just show their result card
     const existingResult = await redis.get(RKEY(msg.author.id));
     if (existingResult) {
