@@ -56,6 +56,23 @@ if (!FORGE_MATRIX || Object.keys(FORGE_MATRIX).length === 0) {
   );
 }
 
+
+// Helper: return a normalized parts pool for a given alignment
+export function forgePoolFor(alignment = "grey") {
+  const key = String(alignment || "grey").toLowerCase();
+  const m = FORGE_MATRIX || {};
+
+  const colors     = m.colors?.[key]      || m.colors?.grey      || m.colors     || [];
+  const forms      = m.forms?.[key]       || m.forms?.grey       || m.forms      || [];
+  const emitters   = m.emitters?.[key]    || m.emitters?.grey    || m.emitters   || [];
+  const cores      = m.cores?.[key]       || m.cores?.grey       || m.cores      || [];
+  const adjectives = m.adjectives?.[key]  || m.adjectives?.grey  || m.adjectives || [];
+  const materials  = m.materials?.[key]   || m.materials?.grey   || m.materials  || [];
+
+  // keep exotics available for the caller; m.exotics = { chance, colors, forms, descriptions, ... }
+  return { colors, forms, emitters, cores, adjectives, materials, exotics: m.exotics || null };
+}
+
 // Optional: quick visibility on what succeeded
 console.log(
   `[trial] QUESTIONS: ${Array.isArray(QUESTIONS) ? QUESTIONS.length : 0} loaded`,
