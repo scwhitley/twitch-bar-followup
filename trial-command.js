@@ -3,7 +3,8 @@ import {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } from "discord.js";
 import { Redis } from "@upstash/redis";
-import { QUESTIONS } from "./trial-data.js";
+import { QUESTIONS, getQuestion } from "./trial-data.js";
+
 
 const redis = Redis.fromEnv();
 
