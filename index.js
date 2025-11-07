@@ -57,6 +57,11 @@ import { onMessageCreate as onBarMsg } from "./economy/vendor-bar.js"; // Stirre
 // ---------- Dice ----------
 import { onMessageCreate as onDiceMsg } from "./economy/dice-commands.js";
 
+// --- Sith Trial + Forge ---
+import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trial-command.js";
+import { onMessageCreate as onForgeMsg } from "./forge-command.js";
+
+
 // ---------- Redis / misc ----------
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
@@ -148,6 +153,11 @@ client.on("messageCreate", async (msg) => {
 
   // Dice
   await run(onDiceMsg,       "dice");
+
+// messageCreate dispatcher
+  await run(onTrialMsg);
+  await run(onForgeMsg);
+  
 });
 
 client.on("interactionCreate", async (ix) => {
@@ -176,6 +186,7 @@ client.on("interactionCreate", async (ix) => {
   await runI(onSkillsIx,            "skills-int");
   await runI(onCondsIx,             "conditions-int");
   await runI(onChecksIx,            "checks-int");
+  await runI(onTrialIx);
 });
 
 
