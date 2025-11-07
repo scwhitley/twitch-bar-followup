@@ -1,7 +1,7 @@
 // forge-command.js
 import { EmbedBuilder } from "discord.js";
 import { Redis } from "@upstash/redis";
-import { FORGE_MATRIX, forgePoolFor } from "./trial-data.js";
+import { FORGE_MATRIX } from "./trial-data.js";
 
 const redis = Redis.fromEnv();
 
