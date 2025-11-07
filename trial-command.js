@@ -1,9 +1,16 @@
 // trial-command.js
 import {
-  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
 } from "discord.js";
 import { Redis } from "@upstash/redis";
-import { QUESTIONS } from "./trial-data.js"; // ⬅️ import ONLY QUESTIONS
+import {
+  ensureQuestionsLoaded,
+  getQuestion,
+  totalQuestions,
+} from "./trial-data.js";
 
 const redis = Redis.fromEnv();
 
@@ -16,8 +23,11 @@ const LKEY = (uid) => `trial:lock:${uid}`;
 async function withClickLock(uid, fn) {
   const ok = await redis.set(LKEY(uid), "1", { nx: true, ex: 2 });
   if (!ok) return { lockedOut: true };
-  try { return await fn(); }
-  finally { await redis.del(LKEY(uid)); }
+  try {
+    return await fn();
+  } finally {
+    await redis.del(LKEY(uid));
+  }
 }
 
 // ---------- progress meter ----------
@@ -39,18 +49,12 @@ function assertValidQuestion(q, idx) {
   for (let i = 0; i < 4; i++) {
     const a = q.answers[i];
     if (!a || typeof a.label !== "string" || !a.alignment) {
-      throw new Error(`[trial] Question ${idx} answer ${i} missing 'label' or 'alignment'`);
+      throw new Error(
+        `[trial] Question ${idx} answer ${i} missing 'label' or 'alignment'`
+      );
     }
   }
   return q;
-}
-
-// ✅ Keep a local getter (do NOT import getQuestion)
-function getQuestion(idx) {
-  const total = Array.isArray(QUESTIONS) ? QUESTIONS.length : 0;
-  if (!total) throw new Error("[trial] No questions loaded (check JSON path/export)");
-  if (idx < 0 || idx >= total) return null; // finished
-  return assertValidQuestion(QUESTIONS[idx], idx);
 }
 
 // small parser for our pipe-delimited customId
@@ -67,10 +71,8 @@ function parseId(id) {
 }
 
 function buildQuestionEmbed(userId, idx, tally) {
-  const q = getQuestion(idx);
-  if (!q) return null;
-
-  const total = QUESTIONS.length;
+  const q = assertValidQuestion(getQuestion(idx), idx);
+  const total = totalQuestions();
   const progress = `${idx + 1}/${total}`;
 
   const embed = new EmbedBuilder()
@@ -97,11 +99,11 @@ function decideAlignment(tally, tieBreak = "randomAmongTop") {
     ["jedi", tally.jedi],
     ["grey", tally.grey],
   ];
-  arr.sort((a,b) => b[1]-a[1]);
+  arr.sort((a, b) => b[1] - a[1]);
 
   if (arr[0][1] > arr[1][1]) return arr[0][0]; // clear winner
   const topScore = arr[0][1];
-  const top = arr.filter(([_,v]) => v === topScore).map(([k]) => k);
+  const top = arr.filter(([_, v]) => v === topScore).map(([k]) => k);
 
   if (tieBreak === "preferSith" && top.includes("sith")) return "sith";
   if (tieBreak === "preferJedi" && top.includes("jedi")) return "jedi";
@@ -110,21 +112,27 @@ function decideAlignment(tally, tieBreak = "randomAmongTop") {
 }
 
 function buildResultEmbed(result) {
-  const total = QUESTIONS.length;
+  const total = totalQuestions();
   const bar = progressBar(total, total);
   const { alignment, score } = result;
-  const color = alignment === "sith" ? "DarkRed" : alignment === "jedi" ? "Blue" : "Grey";
+  const color =
+    alignment === "sith" ? "DarkRed" : alignment === "jedi" ? "Blue" : "Grey";
   const flavor =
-    alignment === "sith" ? "Power accepted. The Shroud leans into your will."
-  : alignment === "jedi" ? "Discipline holds. You walk the narrow line of light."
-  : "You balance the blade’s edge. Neither dogma owns you.";
+    alignment === "sith"
+      ? "Power accepted. The Shroud leans into your will."
+      : alignment === "jedi"
+      ? "Discipline holds. You walk the narrow line of light."
+      : "You balance the blade’s edge. Neither dogma owns you.";
 
   return new EmbedBuilder()
     .setTitle(`Trial Complete — ${alignment.toUpperCase()}`)
     .setDescription(flavor)
     .addFields(
       { name: "Progress", value: `${bar}  ${total}/${total} · 100%` },
-      { name: "Tally", value: `Sith: **${score.sith}** | Jedi: **${score.jedi}** | Grey: **${score.grey}**` },
+      {
+        name: "Tally",
+        value: `Sith: **${score.sith}** | Jedi: **${score.jedi}** | Grey: **${score.grey}**`,
+      },
       { name: "Next", value: "Run **!forge** to construct your saber." }
     )
     .setColor(color);
@@ -136,10 +144,21 @@ export async function onMessageCreate(msg) {
   const cmd = (parts[0] || "").toLowerCase();
 
   if (cmd === "!trial") {
+    // Ensure questions are actually loaded
+    const loaded = await ensureQuestionsLoaded();
+    if (!loaded) {
+      return void msg.reply(
+        "Trial data not loaded yet. Double-check the `trial-questions.json` location or env var."
+      );
+    }
+
     // If they’ve already completed the trial, just show their result card
     const existingResult = await redis.get(RKEY(msg.author.id));
     if (existingResult) {
-      const result = typeof existingResult === "string" ? JSON.parse(existingResult) : existingResult;
+      const result =
+        typeof existingResult === "string"
+          ? JSON.parse(existingResult)
+          : existingResult;
       const e = buildResultEmbed(result);
       return void msg.channel.send({ embeds: [e] });
     }
@@ -160,11 +179,11 @@ export async function onMessageCreate(msg) {
     }
 
     // Ask next question (or finalize if we're out of questions)
-    const built = buildQuestionEmbed(msg.author.id, session.qIndex, session.tally);
-    if (!built) {
-      // No question at this index → trial is done. Score + persist the result.
+    const total = totalQuestions();
+    if (session.qIndex >= total) {
       const alignment =
-        Object.entries(session.tally).sort((a, b) => b[1] - a[1])[0]?.[0] || "grey";
+        Object.entries(session.tally).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+        "grey";
 
       const result = {
         userId: msg.author.id,
@@ -181,14 +200,19 @@ export async function onMessageCreate(msg) {
       return void msg.channel.send({ embeds: [e] });
     }
 
-    // Still have questions → show the embed + buttons
-    const { embed, components } = built;
+    const { embed, components } = buildQuestionEmbed(
+      msg.author.id,
+      session.qIndex,
+      session.tally
+    );
     return void msg.channel.send({ embeds: [embed], components });
   }
 
   if (cmd === "!trialcancel") {
     await redis.del(SKEY(msg.author.id));
-    return void msg.reply("Your trial session has been canceled. Run **!trial** to start again.");
+    return void msg.reply(
+      "Your trial session has been canceled. Run **!trial** to start again."
+    );
   }
 
   if (cmd === "!trialresult") {
@@ -204,7 +228,7 @@ export async function onInteractionCreate(ix) {
   if (!ix.isButton()) return;
   if (!ix.customId?.startsWith("trial:answer")) return;
 
-  const kv = parseId(ix.customId);  // ← parse pipe format
+  const kv = parseId(ix.customId); // ← parse pipe format
   if (!kv) return;
 
   const uid = ix.user.id;
@@ -214,13 +238,24 @@ export async function onInteractionCreate(ix) {
   const lockedTry = await withClickLock(uid, async () => {
     const raw = await redis.get(SKEY(uid));
     if (!raw) {
-      return { reply: { content: "No active trial. Run **!trial** to begin.", ephemeral: true } };
+      return {
+        reply: {
+          content: "No active trial. Run **!trial** to begin.",
+          ephemeral: true,
+        },
+      };
     }
     const session = typeof raw === "string" ? JSON.parse(raw) : raw;
 
     // stale button?
     if (qIndex !== session.qIndex) {
-      return { reply: { content: "That prompt has moved on. Answer the latest question above.", ephemeral: true } };
+      return {
+        reply: {
+          content:
+            "That prompt has moved on. Answer the latest question above.",
+          ephemeral: true,
+        },
+      };
     }
 
     const q = getQuestion(qIndex);
@@ -230,20 +265,27 @@ export async function onInteractionCreate(ix) {
     }
 
     // record tally + answer
-    const align = opt.alignment; // ✅ alignment, not align
+    const align = opt.alignment.toLowerCase(); // ✅ alignment
     session.tally[align] = (session.tally[align] || 0) + 1;
     session.answers.push({ qid: qIndex, alignment: align });
 
-    if (qIndex < QUESTIONS.length - 1) {
+    const total = totalQuestions();
+    if (qIndex < total - 1) {
       session.qIndex = qIndex + 1;
       await redis.set(SKEY(uid), JSON.stringify(session));
 
       // next question
       const payload = buildQuestionEmbed(uid, session.qIndex, session.tally);
       try {
-        await ix.update({ embeds: [payload.embed], components: payload.components });
+        await ix.update({
+          embeds: [payload.embed],
+          components: payload.components,
+        });
       } catch {
-        await ix.reply({ embeds: [payload.embed], components: payload.components });
+        await ix.reply({
+          embeds: [payload.embed],
+          components: payload.components,
+        });
       }
       return {};
     }
@@ -269,7 +311,10 @@ export async function onInteractionCreate(ix) {
   });
 
   if (lockedTry?.lockedOut) {
-    return void ix.reply({ content: "Easy there—processing your click. Try again in a sec.", ephemeral: true });
+    return void ix.reply({
+      content: "Easy there—processing your click. Try again in a sec.",
+      ephemeral: true,
+    });
   }
   if (lockedTry?.reply) {
     const { reply } = lockedTry;
