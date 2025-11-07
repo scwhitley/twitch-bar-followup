@@ -111,7 +111,6 @@ const client = new Client({
 });
 
 // --- Unified dispatcher: route every message to each handler safely ---
-// local in-process guard (30s window)
 const _seenLocal = new Set();
 function seenOnce(key, ttlMs = 30000) {
   if (_seenLocal.has(key)) return false;
@@ -120,16 +119,14 @@ function seenOnce(key, ttlMs = 30000) {
   return true;
 }
 
-
 client.on("messageCreate", async (msg) => {
   if (msg.author?.bot) return;
 
-  // Run a handler once per message per tag (30s TTL)
   const run = async (fn, tag) => {
     if (!fn) return;
     try {
       const ok = await deDupeGuard(`m:${msg.id}:${tag}`, 30);
-      if (!ok) return; // this handler already ran for this message
+      if (!ok) return;
       await fn(msg);
     } catch (e) {
       console.error("[handler error]", tag || fn?.name, e);
@@ -191,7 +188,9 @@ client.on("interactionCreate", async (ix) => {
   await runI(onSkillsIx,            "skills-int");
   await runI(onCondsIx,             "conditions-int");
   await runI(onChecksIx,            "checks-int");
-  await runI(onTrialIx);
+
+  // Trial interactions
+  await runI(onTrialIx,             "trial-int");
 });
 
 
