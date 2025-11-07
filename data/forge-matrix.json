@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "exoticChance": 0.01,
+  "alignments": {
+    "sith": {
+      "colorPool": ["Crimson", "Blood Red", "Magenta", "Black-Red Core"],
+      "formPool": ["Single Blade", "Dual Blade", "Crossguard", "Curved-Hilt", "Greatsaber"],
+      "descriptions": [
+        "Forged in the agony of fallen masters, its crimson core hums with hunger.",
+        "A curved hilt designed for dominance, whispering betrayal with every swing.",
+        "Twin blades ignite like burning suns — perfect symmetry in chaos.",
+        "A crossguard saber of molten edges, its energy gutters like fury restrained.",
+        "A single black-red blade that drains the light around it.",
+        "Heavy and brutal, built to cleave through armor and morality alike.",
+        "The hilt is cold obsidian, etched with your name in the ancient tongue of hate.",
+        "This saber was not crafted — it bled into being.",
+        "Its unstable core flickers like a beast barely leashed.",
+        "You hear echoes of your rage every time it hums — it knows you."
+      ]
+    },
+    "jedi": {
+      "colorPool": ["Blue", "Green", "Yellow", "Cyan", "Silver"],
+      "formPool": ["Single Blade", "Saber Staff", "Balanced-Hilt", "Shoto", "Temple Guard Pike"],
+      "descriptions": [
+        "Calm radiates from its hilt — an unbroken flow of purpose.",
+        "Forged in meditation, the blade’s tone sings of harmony and control.",
+        "A twin-ended staff, graceful yet unwavering in defense of light.",
+        "Its blue glow feels like an oath — peace through vigilance.",
+        "Etched with ancient runes of serenity, it hums softly when truth is spoken.",
+        "Balanced perfectly between mind and motion, neither too heavy nor too swift.",
+        "The kyber within was not found — it chose you.",
+        "It feels warm to the touch, as though alive with trust.",
+        "A blade that reflects not your power, but your restraint.",
+        "When ignited, the room quiets — even the Force listens."
+      ]
+    },
+    "grey": {
+      "colorPool": ["White", "Silver", "Violet", "Amber", "Smoke-Tinted"],
+      "formPool": ["Dual Blade", "Split-Saber", "Saber Pistol", "Adjustable Hilt", "Cross-Half Blade"],
+      "descriptions": [
+        "A blade that hums both high and low — harmony and chaos intertwined.",
+        "Its color shifts subtly as if undecided, mirroring your own soul.",
+        "One side hums with serenity, the other with wrath — balance given form.",
+        "Etched with both Jedi and Sith script — defiance made steel.",
+        "A pale white flame, like moonlight carved into a weapon.",
+        "Forged from two halves of opposing kyber crystals, now singing as one.",
+        "The blade flickers between hues, refusing allegiance to any creed.",
+        "Light and shadow dance along its edge as it moves — alive, unbound.",
+        "It feels cold in the hand but burns in the mind.",
+        "Forged not in a forge, but within the quiet storm of your thoughts."
+      ]
+    }
+  },
+  "exotics": {
+    "colorPool": ["Black", "Iridescent", "Crystalline Blue", "Gold-Core", "Transparent White"],
+    "formPool": ["Whip Saber", "Saber Pike", "Cross-Disc Saber", "Saber Shard", "Broken Saber"],
+    "descriptions": [
+      "A relic from before order and chaos — it defies all classification.",
+      "This saber sings in multiple tones, as if its crystal cannot decide its truth.",
+      "It flickers with fractal light — a dying star reborn in your grip.",
+      "The hum isn’t constant; it breathes, like a living creature.",
+      "You realize this weapon wasn’t forged… it remembered itself."
+    ]
+  }
+}
