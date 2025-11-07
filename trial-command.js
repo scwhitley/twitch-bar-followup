@@ -147,7 +147,7 @@ if (cmd === "!trialdebug") {
 }
 
   // Manual reload
-  / inside onMessageCreate(msg) in trial-command.js
+  // inside onMessageCreate(msg) in trial-command.js
 if (cmd === "!trialreload") {
   const ok = await reloadTrialData();
   const s = getTrialStatus();
