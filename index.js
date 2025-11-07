@@ -1,5 +1,6 @@
 // index.js
 console.log("[BOOT] process.cwd() =", process.cwd());
+import { reloadTrialData, getTrialStatus } from "./trial-data.js";
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -2189,7 +2190,10 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
   return res.sendStatus(200);
 });
 
-
+/ after client initialization, before login:
+await reloadTrialData();
+const ts = getTrialStatus();
+console.log("[TRIAL LOADER]", ts);
 
 
 // ---------------- Start server ----------------
