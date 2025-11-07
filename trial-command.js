@@ -3,8 +3,7 @@ import {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } from "discord.js";
 import { Redis } from "@upstash/redis";
-import { QUESTIONS, getQuestion } from "./trial-data.js";
-
+import { QUESTIONS } from "./trial-data.js"; // ⬅️ import ONLY QUESTIONS
 
 const redis = Redis.fromEnv();
 
@@ -21,7 +20,7 @@ async function withClickLock(uid, fn) {
   finally { await redis.del(LKEY(uid)); }
 }
 
-// ---------- NEW: nicer progress meter ----------
+// ---------- progress meter ----------
 function progressBar(completed, total) {
   const full = Math.max(0, Math.min(total, completed));
   const on = "▰".repeat(full);
@@ -46,6 +45,7 @@ function assertValidQuestion(q, idx) {
   return q;
 }
 
+// ✅ Keep a local getter (do NOT import getQuestion)
 function getQuestion(idx) {
   const total = Array.isArray(QUESTIONS) ? QUESTIONS.length : 0;
   if (!total) throw new Error("[trial] No questions loaded (check JSON path/export)");
@@ -53,13 +53,22 @@ function getQuestion(idx) {
   return assertValidQuestion(QUESTIONS[idx], idx);
 }
 
+// small parser for our pipe-delimited customId
+function parseId(id) {
+  // format: trial:answer|u=...|i=...|a=...
+  if (!id?.startsWith("trial:answer")) return null;
+  const parts = id.split("|");
+  const kv = {};
+  for (let p of parts.slice(1)) {
+    const [k, v] = p.split("=");
+    kv[k] = decodeURIComponent(v ?? "");
+  }
+  return kv; // { u, i, a }
+}
 
 function buildQuestionEmbed(userId, idx, tally) {
   const q = getQuestion(idx);
-  if (!q) {
-    // We’re past the end; caller should handle “finished” branch instead.
-    return null;
-  }
+  if (!q) return null;
 
   const total = QUESTIONS.length;
   const progress = `${idx + 1}/${total}`;
@@ -81,7 +90,6 @@ function buildQuestionEmbed(userId, idx, tally) {
 
   return { embed, components: [row] };
 }
-
 
 function decideAlignment(tally, tieBreak = "randomAmongTop") {
   const arr = [
@@ -127,57 +135,56 @@ export async function onMessageCreate(msg) {
   const parts = msg.content.trim().split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
 
- if (cmd === "!trial") {
-  // If they’ve already completed the trial, just show their result card
-  const existingResult = await redis.get(RKEY(msg.author.id));
-  if (existingResult) {
-    const result = typeof existingResult === "string" ? JSON.parse(existingResult) : existingResult;
-    const e = buildResultEmbed(result);
-    return void msg.channel.send({ embeds: [e] });
+  if (cmd === "!trial") {
+    // If they’ve already completed the trial, just show their result card
+    const existingResult = await redis.get(RKEY(msg.author.id));
+    if (existingResult) {
+      const result = typeof existingResult === "string" ? JSON.parse(existingResult) : existingResult;
+      const e = buildResultEmbed(result);
+      return void msg.channel.send({ embeds: [e] });
+    }
+
+    // Load or create a session
+    const existing = await redis.get(SKEY(msg.author.id));
+    let session;
+    if (existing) {
+      session = typeof existing === "string" ? JSON.parse(existing) : existing;
+    } else {
+      session = {
+        qIndex: 0,
+        startedAt: Date.now(),
+        tally: { sith: 0, jedi: 0, grey: 0 },
+        answers: [],
+      };
+      await redis.set(SKEY(msg.author.id), JSON.stringify(session));
+    }
+
+    // Ask next question (or finalize if we're out of questions)
+    const built = buildQuestionEmbed(msg.author.id, session.qIndex, session.tally);
+    if (!built) {
+      // No question at this index → trial is done. Score + persist the result.
+      const alignment =
+        Object.entries(session.tally).sort((a, b) => b[1] - a[1])[0]?.[0] || "grey";
+
+      const result = {
+        userId: msg.author.id,
+        alignment,
+        score: session.tally,
+        finishedAt: Date.now(),
+        totalAnswered: session.answers?.length ?? 0,
+      };
+
+      await redis.set(RKEY(msg.author.id), JSON.stringify(result));
+      await redis.del(SKEY(msg.author.id)); // clear session
+
+      const e = buildResultEmbed(result);
+      return void msg.channel.send({ embeds: [e] });
+    }
+
+    // Still have questions → show the embed + buttons
+    const { embed, components } = built;
+    return void msg.channel.send({ embeds: [embed], components });
   }
-
-  // Load or create a session
-  const existing = await redis.get(SKEY(msg.author.id));
-  let session;
-  if (existing) {
-    session = typeof existing === "string" ? JSON.parse(existing) : existing;
-  } else {
-    session = {
-      qIndex: 0,
-      startedAt: Date.now(),
-      tally: { sith: 0, jedi: 0, grey: 0 },
-      answers: [],
-    };
-    await redis.set(SKEY(msg.author.id), JSON.stringify(session));
-  }
-
-  // Ask next question (or finalize if we're out of questions)
-  const built = buildQuestionEmbed(msg.author.id, session.qIndex, session.tally);
-  if (!built) {
-    // No question at this index → trial is done. Score + persist the result.
-    const alignment =
-      Object.entries(session.tally).sort((a, b) => b[1] - a[1])[0]?.[0] || "grey";
-
-    const result = {
-      userId: msg.author.id,
-      alignment,
-      tally: session.tally,
-      finishedAt: Date.now(),
-      totalAnswered: session.answers?.length ?? 0,
-    };
-
-    await redis.set(RKEY(msg.author.id), JSON.stringify(result));
-    await redis.del(SKEY(msg.author.id)); // clear session
-
-    const e = buildResultEmbed(result);
-    return void msg.channel.send({ embeds: [e] });
-  }
-
-  // Still have questions → show the embed + buttons
-  const { embed, components } = built;
-  return void msg.channel.send({ embeds: [embed], components });
-}
-
 
   if (cmd === "!trialcancel") {
     await redis.del(SKEY(msg.author.id));
@@ -195,12 +202,14 @@ export async function onMessageCreate(msg) {
 
 export async function onInteractionCreate(ix) {
   if (!ix.isButton()) return;
-  if (!ix.customId?.startsWith("trial:answer:")) return;
+  if (!ix.customId?.startsWith("trial:answer")) return;
+
+  const kv = parseId(ix.customId);  // ← parse pipe format
+  if (!kv) return;
 
   const uid = ix.user.id;
-  const [_, __, qStr, optStr] = ix.customId.split(":");
-  const qIndex = parseInt(qStr, 10);
-  const optIndex = parseInt(optStr, 10);
+  const qIndex = parseInt(kv.i, 10);
+  const optIndex = parseInt(kv.a, 10);
 
   const lockedTry = await withClickLock(uid, async () => {
     const raw = await redis.get(SKEY(uid));
@@ -214,22 +223,23 @@ export async function onInteractionCreate(ix) {
       return { reply: { content: "That prompt has moved on. Answer the latest question above.", ephemeral: true } };
     }
 
-    const q = QUESTIONS[qIndex];
-    const opt = q.options[optIndex];
+    const q = getQuestion(qIndex);
+    const opt = q.answers[optIndex]; // ✅ answers, not options
     if (!opt) {
       return { reply: { content: "Invalid option.", ephemeral: true } };
     }
 
     // record tally + answer
-    session.tally[opt.align] = (session.tally[opt.align] || 0) + 1;
-    session.answers.push({ qid: qIndex, align: opt.align });
+    const align = opt.alignment; // ✅ alignment, not align
+    session.tally[align] = (session.tally[align] || 0) + 1;
+    session.answers.push({ qid: qIndex, alignment: align });
 
     if (qIndex < QUESTIONS.length - 1) {
       session.qIndex = qIndex + 1;
       await redis.set(SKEY(uid), JSON.stringify(session));
 
       // next question
-      const payload = buildQuestionEmbed(session.qIndex, session.tally);
+      const payload = buildQuestionEmbed(uid, session.qIndex, session.tally);
       try {
         await ix.update({ embeds: [payload.embed], components: payload.components });
       } catch {
@@ -239,8 +249,7 @@ export async function onInteractionCreate(ix) {
     }
 
     // final question answered — compute result
-    const tieBreak = (typeof q.scoring?.tieBreak === "string" ? q.scoring.tieBreak : "randomAmongTop");
-    const alignment = decideAlignment(session.tally, tieBreak);
+    const alignment = decideAlignment(session.tally, "randomAmongTop");
 
     const result = {
       alignment,
