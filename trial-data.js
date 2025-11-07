@@ -3,96 +3,136 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// ESM __dirname shim
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
+const __dirname = path.dirname(__filename);
 
-// ---- tolerant JSON loader (tries /data then root) ----
-function loadJson(relFromModule) {
+function tryLoad(p) {
   try {
-    const p = path.join(__dirname, relFromModule);
-    return JSON.parse(fs.readFileSync(p, "utf8"));
+    const full = path.resolve(__dirname, p);
+    if (!fs.existsSync(full)) return null;
+    const raw = fs.readFileSync(full, "utf-8");
+    return JSON.parse(raw);
   } catch {
     return null;
   }
 }
 
-let QUESTIONS = loadJson("./data/trial-questions.json");
-if (!Array.isArray(QUESTIONS) || QUESTIONS.length === 0) {
-  QUESTIONS = loadJson("./trial-questions.json") || [];
-}
-if (!Array.isArray(QUESTIONS)) QUESTIONS = [];
+// Try multiple locations so Render / your repo layout both work
+const candidates = [
+  "./trial-questions.json",
+  "./data/trial-questions.json",
+];
 
-export { QUESTIONS };
-
-// Handy getter w/ useful error if empty/out-of-range
-export function getQuestion(i) {
-  if (!Array.isArray(QUESTIONS) || QUESTIONS.length === 0) {
-    throw new Error("[trial] No questions loaded (check JSON path/export)");
+let QUESTIONS_RAW = null;
+for (const rel of candidates) {
+  const data = tryLoad(rel);
+  if (data?.questions?.length) {
+    QUESTIONS_RAW = data;
+    console.log(`[trial-data] Loaded questions from ${rel} (${data.questions.length})`);
+    break;
   }
-  if (i < 0 || i >= QUESTIONS.length) {
-    throw new Error(`[trial] Question index out of range: ${i}/${QUESTIONS.length}`);
-  }
-  return QUESTIONS[i];
 }
 
-// ---- Forge matrix + helper (used by forge-command.js) ----
-export const FORGE_MATRIX = {
-  colors: {
-    sith: ["Crimson", "Blood Red", "Dark Magenta"],
-    jedi: ["Blue", "Green", "Yellow"],
-    grey: ["White", "Silver", "Smoke"],
+function validateQuestions(arr = []) {
+  const out = [];
+  for (let i = 0; i < arr.length; i++) {
+    const q = arr[i];
+    if (!q || typeof q.prompt !== "string") continue;
+    if (!Array.isArray(q.answers) || q.answers.length !== 4) continue;
+    // Each answer: { label, alignment }
+    const ok = q.answers.every(a => a && typeof a.label === "string" && typeof a.alignment === "string");
+    if (!ok) continue;
+    out.push({
+      prompt: q.prompt,
+      // normalize field names just in case
+      answers: q.answers.map(a => ({ label: a.label, alignment: a.alignment.toLowerCase() })),
+      scoring: q.scoring || undefined,
+    });
+  }
+  return out;
+}
+
+export const QUESTIONS = validateQuestions(QUESTIONS_RAW?.questions);
+
+// Safety: stop the runtime from exploding if file was missing.
+// You’ll still see an error card in logs, but commands won’t crash.
+if (!QUESTIONS.length) {
+  console.error("[trial-data] No questions loaded. Make sure trial-questions.json exists in project root OR /data and has { questions: [...] } with 4 answers each.");
+}
+
+// ----------------- FORGE POOL / MATRIX -----------------
+
+// Basic pools by alignment (expand as you like)
+const FORGE_POOLS = {
+  sith: {
+    colors: ["Crimson", "Blood Red", "Dark Scarlet"],
+    forms: ["Single Saber", "Crossguard", "Curved Hilt"],
+    emitters: ["Forked Emitter", "Vented Emitter", "Spine Emitter"],
+    cores: ["Kyber (Bled)", "Synthetic Core", "Shroud-Touched Crystal"],
+    adjectives: ["Jagged", "Aggressive", "Seared"],
+    materials: ["Obsidian Steel", "Burnt Durasteel", "War-etched Alloy"],
   },
-  forms: {
-    sith: ["Crossguard", "Scimitar", "Curved Hilt"],
-    jedi: ["Standard", "Shoto", "Staff"],
-    grey: ["Dual-Phase", "Variable", "Split-Saber"],
+  jedi: {
+    colors: ["Blue", "Green", "Yellow"],
+    forms: ["Single Saber", "Shoto Offhand", "Guardian Pike"],
+    emitters: ["Clean Emitter", "Halo Emitter", "Disc Emitter"],
+    cores: ["Kyber (Attuned)", "Luminant Core", "Balanced Crystal"],
+    adjectives: ["Elegant", "Disciplined", "Harmonized"],
+    materials: ["Polished Steel", "Temple Alloy", "Songwood Inlay"],
   },
-  emitters: {
-    sith: ["Fang", "Razor", "Blight"],
-    jedi: ["Sentinel", "Beacon", "Harmony"],
-    grey: ["Balance", "Mirror", "Veil"],
-  },
-  cores: {
-    sith: ["Synthetic Kyber", "Onyx Core", "Rage Focus"],
-    jedi: ["Kyber Crystal", "Lumen Core", "Calm Focus"],
-    grey: ["Attuned Shard", "Neutral Core", "Shroud Focus"],
-  },
-  adjectives: {
-    sith: ["Barbed", "Vicious", "Seething"],
-    jedi: ["Serene", "Stalwart", "Guiding"],
-    grey: ["Austere", "Measured", "Veiled"],
-  },
-  materials: {
-    sith: ["Charred Durasteel", "Obsidian Alloy", "Hemosteel"],
-    jedi: ["Aureline Steel", "Polished Brylark", "Temple Brass"],
-    grey: ["Gunmetal Alloy", "Smoked Steel", "Runic Composite"],
-  },
-  exotics: {
-    chance: 0.03,
-    colors: ["Amethyst", "Black-Core Red", "Darksilver"],
-    forms: ["Tri-Saber", "Chain-Saber", "Switchblade Pike"],
-    descriptions: [
-      "Anomalous resonance hums through the hilt.",
-      "A forbidden design stolen from ancient holocrons.",
-      "The blade flickers like a heartbeat in the Shroud.",
-    ],
+  grey: {
+    colors: ["White", "Silver", "Amethyst"],
+    forms: ["Dual Sabers", "Staff Saber", "Switch-Hilt"],
+    emitters: ["Phase Emitter", "Ring Emitter", "Split Emitter"],
+    cores: ["Veiled Crystal", "Phase Core", "Twinned Kyber"],
+    adjectives: ["Adaptive", "Balanced", "Quiet"],
+    materials: ["Shadowglass", "Worn Durasteel", "Ghostwood Wrap"],
   },
 };
 
-export function forgePoolFor(alignment = "grey") {
-  const key = String(alignment || "grey").toLowerCase();
-  const m = FORGE_MATRIX;
-
-  const pick = (obj) =>
-    (obj?.[key] ?? obj?.grey ?? obj ?? []);
-
-  return {
-    colors:     pick(m.colors),
-    forms:      pick(m.forms),
-    emitters:   pick(m.emitters),
-    cores:      pick(m.cores),
-    adjectives: pick(m.adjectives),
-    materials:  pick(m.materials),
-    exotics:    m.exotics || null,
-  };
+export function forgePoolFor(alignment) {
+  const a = String(alignment || "grey").toLowerCase();
+  return FORGE_POOLS[a] || FORGE_POOLS.grey;
 }
+
+// Optional exotic matrix (low chance)
+export const FORGE_MATRIX = {
+  exotics: {
+    chance: 0.03, // 3% exotic
+    colors: ["Black Core", "Prismatic Rift", "Voidglow"],
+    forms: ["Chain Saber", "Whipblade", "Split Staff"],
+    descriptions: [
+      "A ripple of voidlight devours the edges of the blade.",
+      "Segments phase in and out, singing in reverse.",
+      "The beam blooms and contracts like a living heartbeat.",
+    ],
+  },
+  colors: {
+    sith: FORGE_POOLS.sith.colors,
+    jedi: FORGE_POOLS.jedi.colors,
+    grey: FORGE_POOLS.grey.colors,
+  },
+  forms: {
+    sith: FORGE_POOLS.sith.forms,
+    jedi: FORGE_POOLS.jedi.forms,
+    grey: FORGE_POOLS.grey.forms,
+  },
+  descriptions: {
+    sith: [
+      "A hungry edge that howls when swung.",
+      "The beam gutters like embers before roaring alive.",
+      "The hilt thrums with caged fury.",
+    ],
+    jedi: [
+      "A steady tone, pure and resolute.",
+      "Balanced light flows like water from a spring.",
+      "The blade hums in quiet harmony.",
+    ],
+    grey: [
+      "A calm, shifting resonance strung between two worlds.",
+      "The edge flickers with choices not yet made.",
+      "Silent power tempered by restraint.",
+    ],
+  },
+};
