@@ -28,39 +28,61 @@ function progressBar(completed, total) {
   return on + off;
 }
 
-function buildQuestionEmbed(qIndex, tally) {
-  const total = QUESTIONS.length;              // 15
-  const answered = qIndex;                     // how many already answered
-  const pct = Math.round((answered / total) * 100);
-  const q = QUESTIONS[qIndex];
-
-  const bar = progressBar(answered, total);
-  const counts = `Sith: **${tally.sith}** • Jedi: **${tally.jedi}** • Grey: **${tally.grey}**`;
-
-  const desc = [
-    `**Progress:** ${bar}  ${answered}/${total} · ${pct}%`,
-    "",
-    q.prompt
-  ].join("\n");
-
-  return {
-    embed: new EmbedBuilder()
-      .setTitle(`Sith Trial — Question ${qIndex + 1}/${total}`)
-      .setDescription(desc)
-      .setFooter({ text: counts })
-      .setColor("DarkRed"),
-    components: [
-      new ActionRowBuilder().addComponents(
-        ...q.options.map((o, idx) =>
-          new ButtonBuilder()
-            .setCustomId(`trial:answer:${qIndex}:${idx}`)
-            .setLabel(o.text)
-            .setStyle(ButtonStyle.Secondary)
-        )
-      ),
-    ],
-  };
+function assertValidQuestion(q, idx) {
+  if (!q) throw new Error(`[trial] Missing question at index ${idx}`);
+  if (typeof q.prompt !== "string" || !q.prompt.trim()) {
+    throw new Error(`[trial] Question ${idx} missing 'prompt'`);
+  }
+  if (!Array.isArray(q.answers) || q.answers.length !== 4) {
+    throw new Error(`[trial] Question ${idx} needs 4 answers`);
+  }
+  for (let i = 0; i < 4; i++) {
+    const a = q.answers[i];
+    if (!a || typeof a.label !== "string" || !a.alignment) {
+      throw new Error(`[trial] Question ${idx} answer ${i} missing 'label' or 'alignment'`);
+    }
+  }
+  return q;
 }
+
+function getQuestion(idx) {
+  const total = Array.isArray(QUESTIONS) ? QUESTIONS.length : 0;
+  if (!total) throw new Error("[trial] No questions loaded (check JSON path/export)");
+  if (idx < 0 || idx >= total) return null; // finished
+  return assertValidQuestion(QUESTIONS[idx], idx);
+}
+
+
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
+
+function buildQuestionEmbed(userId, idx, tally) {
+  const q = getQuestion(idx);
+  if (!q) {
+    // We’re past the end; caller should handle “finished” branch instead.
+    return null;
+  }
+
+  const total = QUESTIONS.length;
+  const progress = `${idx + 1}/${total}`;
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Sith Trial — Question ${progress}`)
+    .setDescription(q.prompt)
+    .setColor("Purple")
+    .setFooter({ text: `Progress: ${progress}` });
+
+  const row = new ActionRowBuilder().addComponents(
+    q.answers.map((a, i) =>
+      new ButtonBuilder()
+        .setCustomId(`trial:answer|u=${userId}|i=${idx}|a=${i}`)
+        .setLabel(a.label)
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
+
+  return { embed, components: [row] };
+}
+
 
 function decideAlignment(tally, tieBreak = "randomAmongTop") {
   const arr = [
@@ -106,31 +128,57 @@ export async function onMessageCreate(msg) {
   const parts = msg.content.trim().split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
 
-  if (cmd === "!trial") {
-    const existingResult = await redis.get(RKEY(msg.author.id));
-    if (existingResult) {
-      const result = typeof existingResult === "string" ? JSON.parse(existingResult) : existingResult;
-      const e = buildResultEmbed(result);
-      return void msg.channel.send({ embeds: [e] });
-    }
-
-    const existing = await redis.get(SKEY(msg.author.id));
-    let session;
-    if (existing) {
-      session = typeof existing === "string" ? JSON.parse(existing) : existing;
-    } else {
-      session = {
-        qIndex: 0,
-        startedAt: Date.now(),
-        tally: { sith: 0, jedi: 0, grey: 0 },
-        answers: [],
-      };
-      await redis.set(SKEY(msg.author.id), JSON.stringify(session));
-    }
-
-    const { embed, components } = buildQuestionEmbed(session.qIndex, session.tally);
-    return void msg.channel.send({ embeds: [embed], components });
+ if (cmd === "!trial") {
+  // If they’ve already completed the trial, just show their result card
+  const existingResult = await redis.get(RKEY(msg.author.id));
+  if (existingResult) {
+    const result = typeof existingResult === "string" ? JSON.parse(existingResult) : existingResult;
+    const e = buildResultEmbed(result);
+    return void msg.channel.send({ embeds: [e] });
   }
+
+  // Load or create a session
+  const existing = await redis.get(SKEY(msg.author.id));
+  let session;
+  if (existing) {
+    session = typeof existing === "string" ? JSON.parse(existing) : existing;
+  } else {
+    session = {
+      qIndex: 0,
+      startedAt: Date.now(),
+      tally: { sith: 0, jedi: 0, grey: 0 },
+      answers: [],
+    };
+    await redis.set(SKEY(msg.author.id), JSON.stringify(session));
+  }
+
+  // Ask next question (or finalize if we're out of questions)
+  const built = buildQuestionEmbed(msg.author.id, session.qIndex, session.tally);
+  if (!built) {
+    // No question at this index → trial is done. Score + persist the result.
+    const alignment =
+      Object.entries(session.tally).sort((a, b) => b[1] - a[1])[0]?.[0] || "grey";
+
+    const result = {
+      userId: msg.author.id,
+      alignment,
+      tally: session.tally,
+      finishedAt: Date.now(),
+      totalAnswered: session.answers?.length ?? 0,
+    };
+
+    await redis.set(RKEY(msg.author.id), JSON.stringify(result));
+    await redis.del(SKEY(msg.author.id)); // clear session
+
+    const e = buildResultEmbed(result);
+    return void msg.channel.send({ embeds: [e] });
+  }
+
+  // Still have questions → show the embed + buttons
+  const { embed, components } = built;
+  return void msg.channel.send({ embeds: [embed], components });
+}
+
 
   if (cmd === "!trialcancel") {
     await redis.del(SKEY(msg.author.id));
