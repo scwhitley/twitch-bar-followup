@@ -53,8 +53,6 @@ function getQuestion(idx) {
 }
 
 
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-
 function buildQuestionEmbed(userId, idx, tally) {
   const q = getQuestion(idx);
   if (!q) {
