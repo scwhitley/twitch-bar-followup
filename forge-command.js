@@ -1,55 +1,92 @@
 // forge-command.js
 import { EmbedBuilder } from "discord.js";
 import { Redis } from "@upstash/redis";
-import { FORGE_MATRIX } from "./trial-data.js";
 
 const redis = Redis.fromEnv();
 
-const RKEY = (uid) => `trial:result:${uid}`;
-const FKEY = (uid) => `forge:build:${uid}`;
+// Keys
+const RKEY = (uid) => `trial:result:${uid}`; // alignment result from !trial
+const FKEY = (uid) => `forge:build:${uid}`;  // saved saber build
 
-// --- helpers ---
+// ---- Local forge pools (no external import needed) ----
+const FORGE_POOLS = {
+  sith: {
+    colors: ["Crimson", "Blood Red", "Dark Vermilion", "Black-Core Red"],
+    forms: ["Single Blade", "Dualblade", "Crossguard", "Curved Hilt"],
+    emitters: ["Forked Fang", "Razor Crown", "Obsidian Spike", "Storm Vane"],
+    cores: ["Kyber—Fractured", "Kyber—Bleeding", "Shroud-Tuned Crystal", "Synth-Kyber"],
+    adjectives: ["Jagged", "Serrated", "Scorched", "Warlord’s"],
+    materials: ["Blacksteel", "Char-Onyx", "Bloodglass", "Hexed Alloy"],
+  },
+  jedi: {
+    colors: ["Azure", "Emerald", "Gold", "White"],
+    forms: ["Single Blade", "Shoto + Main", "Staff Saber", "Balanced Hilt"],
+    emitters: ["Saint’s Ring", "Guardian Crown", "Polished Flare", "Seraph Halo"],
+    cores: ["Kyber—Purified", "Twin-Kyber Harmony", "Sunglass Kyber", "Lumen Core"],
+    adjectives: ["Refined", "Serene", "Vigilant", "Temple-Forged"],
+    materials: ["Polished Durasteel", "Hallowed Brass", "Sun-Bronze", "Marbled Alloy"],
+  },
+  grey: {
+    colors: ["Amethyst", "Silver", "Smoke-White", "Teal"],
+    forms: ["Switch-Hilt", "Dualblade (Split)", "Chain-Linked Pair", "Offset Guard"],
+    emitters: ["Mirror Crown", "Split Flare", "Dial Emitter", "Veil-Ring"],
+    cores: ["Kyber—Untuned", "Rift-Cut Crystal", "Half-Bleed Stabilized", "Flux Core"],
+    adjectives: ["Pragmatic", "Wanderer’s", "Balanced", "Ciphered"],
+    materials: ["Gunmetal", "Slate Steel", "Veilglass", "Metacite"],
+  },
+  // ~1% Exotic roll (overrides the standard pools)
+  exotics: {
+    chance: 0.01,
+    colors: ["Prismatic Rift", "Void-Black Core", "Starfire"],
+    forms: ["Orbiting Shards", "Whip-Saber", "Segmented Arc"],
+    emitters: ["Grav Halo", "Shroud Lantern", "Singularity Gate"],
+    descriptions: [
+      "A weapon that hums in reverse, its edge folding sound into the hilt.",
+      "Segments orbit a silent core, aligning only when you command it.",
+      "Light spills like liquid glass, reshaping to your intent.",
+    ],
+  },
+};
+
+// ------- Tiny helpers -------
 function rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
-/**
- * Build a saber for a given alignment.
- * - If FORGE_MATRIX.exotics is present, rolls for an exotic (keeps your old behavior).
- * - Otherwise uses forgePoolFor(alignment) to assemble color/form/emitter/core/hilt.
- */
-function buildSaberForAlignment(alignment) {
-  const a = String(alignment || "grey").toLowerCase();
+function forgePoolFor(alignment) {
+  return FORGE_POOLS[alignment] || FORGE_POOLS.grey;
+}
 
-  // Exotic support (from your existing FORGE_MATRIX shape)
-  const ex = FORGE_MATRIX?.exotics;
-  const chance = ex?.chance ?? 0.0;
-  if (ex && Math.random() < chance) {
+function buildSaberForAlignment(alignment) {
+  // Exotic variant?
+  if (Math.random() < (FORGE_POOLS.exotics.chance || 0)) {
     return {
-      alignment: a,
+      alignment,
       exotic: true,
-      // keep your legacy exotic fields (description) to stay compatible
-      color: rand(ex.colors || ["Unstable Crimson"]),
-      form: rand(ex.forms || ["Crossguard"]),
-      description: rand(ex.descriptions || ["A volatile, legend-whispered relic of the Shroud."]),
+      color: rand(FORGE_POOLS.exotics.colors),
+      form: rand(FORGE_POOLS.exotics.forms),
+      emitter: rand(FORGE_POOLS.exotics.emitters),
+      core: "Exotic Core",
+      hilt: "Otherworldly construction",
+      description: rand(FORGE_POOLS.exotics.descriptions),
+      rolledAt: Date.now(),
     };
   }
 
-  // Normal pool (richer parts)
-  const pool = forgePoolFor(a); // returns alignment pool, falls back to grey
-  const color   = rand(pool.colors || ["Purple"]);
-  const form    = rand(pool.forms || ["Single Blade"]);
-  const emitter = rand(pool.emitters || ["Channel-ring Emitter"]);
-  const core    = rand(pool.cores || ["Attuned Kyber"]);
-  const adj     = rand(pool.adjectives || ["echo-tuned"]);
-  const mat     = rand(pool.materials || ["gunmetal mosaic"]);
-
+  const pool = forgePoolFor(alignment);
   return {
-    alignment: a,
+    alignment,
     exotic: false,
-    color,
-    form,
-    emitter,
-    core,
-    hilt: `${adj} hilt of ${mat}`,
+    color: rand(pool.colors),
+    form: rand(pool.forms),
+    emitter: rand(pool.emitters),
+    core: rand(pool.cores),
+    hilt: `${rand(pool.adjectives)} hilt of ${rand(pool.materials)}`,
+    description:
+      alignment === "sith"
+        ? "A blade that drinks the room’s warmth. It wants a target."
+        : alignment === "jedi"
+        ? "Balanced weight, calm tone—answers to steady hands."
+        : "Neither stiff nor savage; it listens only to intent.",
+    rolledAt: Date.now(),
   };
 }
 
@@ -60,27 +97,23 @@ function forgeEmbed(build, user) {
     ? "You have forged an EXOTIC variant."
     : "A weapon in balance with your path.";
 
-  // Prefer legacy .description if present (your old exotics path uses this),
-  // otherwise describe the assembled parts.
-  const desc =
-    build.description ??
-    [
-      `**Hilt:** ${build.hilt || "standard forge hilt"}`,
-      `**Emitter:** ${build.emitter || "standard emitter"}`,
-      `**Core:** ${build.core || "standard kyber core"}`,
-    ].join("\n");
-
-  return new EmbedBuilder()
+  const e = new EmbedBuilder()
     .setTitle(title)
-    .setDescription(desc)
+    .setDescription(build.description)
     .addFields(
-      { name: "Alignment", value: (build.alignment || "grey").toUpperCase(), inline: true },
-      { name: "Color", value: build.color || "Unknown", inline: true },
-      { name: "Form", value: build.form || "Unknown", inline: true },
+      { name: "Alignment", value: build.alignment.toUpperCase(), inline: true },
+      { name: "Color", value: build.color, inline: true },
+      { name: "Form", value: build.form, inline: true },
+      { name: "Emitter", value: build.emitter, inline: true },
+      { name: "Core", value: build.core, inline: true },
+      { name: "Hilt", value: build.hilt, inline: true },
     )
     .setFooter({ text: footer })
     .setColor(colorMap[build.alignment] || "Purple")
     .setTimestamp(new Date(build.rolledAt || Date.now()));
+
+  if (user) e.setAuthor({ name: user.username });
+  return e;
 }
 
 async function applyAlignmentRole(member, alignment) {
@@ -89,7 +122,7 @@ async function applyAlignmentRole(member, alignment) {
   const greyId = process.env.GREY_ROLE_ID || "";
 
   const map = { sith: sithId, jedi: jediId, grey: greyId };
-  const wanted = map[String(alignment || "grey").toLowerCase()];
+  const wanted = map[alignment];
   if (!wanted) return;
 
   try {
@@ -101,30 +134,30 @@ async function applyAlignmentRole(member, alignment) {
   }
 }
 
+// ------- Command handler -------
 export async function onMessageCreate(msg) {
   if (msg.author.bot) return;
-  const parts = msg.content.trim().split(/\s+/);
-  const cmd = (parts[0] || "").toLowerCase();
+  const [cmd] = msg.content.trim().toLowerCase().split(/\s+/);
 
+  // !forge — build from the saved trial alignment
   if (cmd === "!forge") {
     const r = await redis.get(RKEY(msg.author.id));
     if (!r) return void msg.reply("You must complete the Trial first. Run **!trial**.");
 
-    const result = typeof r === "string" ? JSON.parse(r) : r; // { alignment: "sith"|"jedi"|"grey", ... }
+    const result = typeof r === "string" ? JSON.parse(r) : r;
+    const alignment = (result.alignment || "grey").toLowerCase();
 
-    // Build saber using the new helper (handles exotics + normal)
-    const build = buildSaberForAlignment(result.alignment);
-    build.rolledAt = Date.now();
-
+    const build = buildSaberForAlignment(alignment);
     await redis.set(FKEY(msg.author.id), JSON.stringify(build));
 
-    // Optional: apply a Discord role based on alignment
-    await applyAlignmentRole(msg.member, result.alignment);
+    // Optional: role assignment
+    await applyAlignmentRole(msg.member, alignment);
 
     const e = forgeEmbed(build, msg.author);
     return void msg.channel.send({ embeds: [e] });
   }
 
+  // !forgecard — DM the last forged card
   if (cmd === "!forgecard") {
     const raw = await redis.get(FKEY(msg.author.id));
     if (!raw) return void msg.reply("No forge result found. Run **!forge** first.");
@@ -139,6 +172,7 @@ export async function onMessageCreate(msg) {
     }
   }
 
+  // !hallofforge — post to a showcase channel (or current if unset)
   if (cmd === "!hallofforge") {
     const raw = await redis.get(FKEY(msg.author.id));
     if (!raw) return void msg.reply("No forge result found. Run **!forge** first.");
