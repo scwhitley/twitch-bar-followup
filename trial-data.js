@@ -3,68 +3,86 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-let QUESTIONS = null; // exported via getter functions
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Candidate paths (relative to /opt/render/project/src when deployed)
-const CANDIDATES = [
-  process.env.TRIAL_QUESTIONS_PATH,             // explicit override
-  "trial-questions.json",                       // src/trial-questions.json
-  "data/trial-questions.json",                  // src/data/trial-questions.json
-].filter(Boolean);
+let QUESTIONS = [];
+let _status = {
+  ok: false,
+  reason: "not loaded",
+  pathTried: [],
+  loadedFrom: null,
+  count: 0,
+};
 
-// Normalizes any of:
-//  - array of questions
-//  - { questions: [...] }
-function normalizeQuestions(parsed) {
-  if (Array.isArray(parsed)) return parsed;
-  if (parsed && Array.isArray(parsed.questions)) return parsed.questions;
-  return null;
+// --- validation helpers
+function isQuestion(q) {
+  if (!q || typeof q.prompt !== "string" || !Array.isArray(q.answers)) return false;
+  if (q.answers.length !== 4) return false;
+  for (const a of q.answers) {
+    if (!a || typeof a.label !== "string" || typeof a.alignment !== "string") return false;
+    const al = a.alignment.toLowerCase();
+    if (!["sith", "jedi", "grey"].includes(al)) return false;
+  }
+  return true;
 }
 
-function safeReadJSON(absPath) {
+function validate(arr) {
+  return Array.isArray(arr) && arr.length >= 1 && arr.every(isQuestion);
+}
+
+function loadJson(p) {
   try {
-    const raw = fs.readFileSync(absPath, "utf8");
-    const parsed = JSON.parse(raw);
-    const q = normalizeQuestions(parsed);
-    if (!q || !q.length) return null;
-    return q;
+    const raw = fs.readFileSync(p, "utf8");
+    return JSON.parse(raw);
   } catch {
     return null;
   }
 }
 
-export async function ensureQuestionsLoaded() {
-  if (QUESTIONS && Array.isArray(QUESTIONS) && QUESTIONS.length) return true;
+// Try several likely locations, plus env override
+function candidatePaths() {
+  const env = process.env.TRIAL_QUESTIONS_PATH;
+  const list = [];
+  if (env) list.push(path.resolve(env));
+  list.push(
+    path.resolve(__dirname, "trial-questions.json"),
+    path.resolve(__dirname, "data", "trial-questions.json"),
+    path.resolve(process.cwd(), "trial-questions.json"),
+    path.resolve(process.cwd(), "data", "trial-questions.json")
+  );
+  return list;
+}
 
-  // Resolve candidates relative to this file (so it works no matter the CWD)
-  for (const rel of CANDIDATES) {
-    const abs = path.isAbsolute(rel) ? rel : path.join(__dirname, rel);
-    const q = safeReadJSON(abs);
-    if (q) {
-      QUESTIONS = q;
-      console.log(`[trial-data] Loaded (${q.length}) from ${abs}`);
+export function reloadTrialData() {
+  const tried = [];
+  let loaded = null;
+  for (const p of candidatePaths()) {
+    tried.push(p);
+    const j = loadJson(p);
+    if (validate(j)) {
+      QUESTIONS = j.map(q => ({
+        prompt: q.prompt,
+        answers: q.answers.map(a => ({
+          label: a.label,
+          alignment: a.alignment.toLowerCase(),
+        })),
+      }));
+      _status = { ok: true, reason: "loaded", pathTried: tried, loadedFrom: p, count: QUESTIONS.length };
       return true;
     }
   }
-
-  console.error(
-    `[trial-data] FAILED to load questions. Tried:\n` +
-      CANDIDATES.map((p) =>
-        path.isAbsolute(p) ? ` - ${p}` : ` - ${path.join(__dirname, p)}`
-      ).join("\n")
-  );
+  QUESTIONS = [];
+  _status = { ok: false, reason: "No valid JSON found", pathTried: tried, loadedFrom: null, count: 0 };
   return false;
 }
 
-export function totalQuestions() {
-  return Array.isArray(QUESTIONS) ? QUESTIONS.length : 0;
+export function getTrialStatus() {
+  return { ..._status };
 }
 
-export function getQuestion(idx) {
-  if (!Array.isArray(QUESTIONS)) return null;
-  if (idx < 0 || idx >= QUESTIONS.length) return null;
-  return QUESTIONS[idx];
-}
+// Initial load (on cold start)
+reloadTrialData();
+
+// Read-only export the current array
+export { QUESTIONS };
