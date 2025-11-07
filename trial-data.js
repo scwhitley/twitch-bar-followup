@@ -1,124 +1,109 @@
 // trial-data.js
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
-
-let QUESTIONS = [];
-let LAST_REASON = "Not loaded";
-let LAST_FROM = "";
-let LAST_PATHS = [];
-let LAST_ERROR = "";
+import { fileURLToPath, pathToFileURL } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const CWD = process.cwd();
 
-function recordAttempt(p, ok, note) {
-  LAST_PATHS.push(p);
-  if (ok) {
-    LAST_FROM = p;
-    LAST_REASON = "Loaded OK";
-  } else if (note) {
-    LAST_ERROR = note;
-    LAST_REASON = "No valid JSON found";
-  }
+// ---------- State ----------
+let QUESTIONS = [];
+let _status = {
+  loaded: false,
+  from: "",
+  count: 0,
+  reason: "Not loaded",
+  pathsTried: [],
+};
+
+// ---------- Helpers ----------
+function resetStatus() {
+  _status = { loaded: false, from: "", count: 0, reason: "Not loaded", pathsTried: [] };
 }
 
-async function tryImportModule(modPath) {
-  try {
-    const mod = await import(modPath + `?t=${Date.now()}`);
-    const q = mod.QUESTIONS || mod.default;
-    if (Array.isArray(q) && q.length) {
-      QUESTIONS = q;
-      recordAttempt(modPath, true);
-      return true;
-    }
-    recordAttempt(modPath, false, "Module did not export QUESTIONS or was empty");
-  } catch (e) {
-    recordAttempt(modPath, false, `Module import failed: ${e?.message || e}`);
+function recordTry(p) {
+  if (!_status.pathsTried.includes(p)) _status.pathsTried.push(p);
+}
+
+async function tryLoadModule(absPath) {
+  recordTry(absPath);
+  if (!fs.existsSync(absPath)) return false;
+  const modUrl = pathToFileURL(absPath).href;
+  const mod = await import(modUrl);
+  const arr = mod.QUESTIONS;
+  if (Array.isArray(arr) && arr.length > 0) {
+    QUESTIONS = arr;
+    _status = { loaded: true, from: absPath, count: arr.length, reason: "OK", pathsTried: _status.pathsTried };
+    return true;
   }
   return false;
 }
 
-function tryReadJson(jsonPath) {
-  try {
-    if (!fs.existsSync(jsonPath)) {
-      recordAttempt(jsonPath, false, "File does not exist");
-      return false;
-    }
-    const raw = fs.readFileSync(jsonPath, "utf8");
-    const q = JSON.parse(raw);
-    if (!Array.isArray(q) || !q.length) {
-      recordAttempt(jsonPath, false, "Parsed but empty / not an array");
-      return false;
-    }
-    QUESTIONS = q;
-    recordAttempt(jsonPath, true);
+async function tryLoadJSON(absPath) {
+  recordTry(absPath);
+  if (!fs.existsSync(absPath)) return false;
+  const raw = fs.readFileSync(absPath, "utf8");
+  const parsed = JSON.parse(raw);
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    QUESTIONS = parsed;
+    _status = { loaded: true, from: absPath, count: parsed.length, reason: "OK", pathsTried: _status.pathsTried };
     return true;
-  } catch (e) {
-    recordAttempt(jsonPath, false, `JSON parse/read error: ${e?.message || e}`);
-    return false;
+  } else if (Array.isArray(parsed?.QUESTIONS) && parsed.QUESTIONS.length > 0) {
+    QUESTIONS = parsed.QUESTIONS;
+    _status = { loaded: true, from: absPath, count: QUESTIONS.length, reason: "OK", pathsTried: _status.pathsTried };
+    return true;
   }
+  return false;
+}
+
+function resolveCandidate(p) {
+  if (!p) return null;
+  if (path.isAbsolute(p)) return p;
+  return path.join(__dirname, p);
+}
+
+// ---------- Public API ----------
+export function getTrialStatus() {
+  return { ..._status };
 }
 
 export async function reloadTrialData() {
-  QUESTIONS = [];
-  LAST_REASON = "Not loaded";
-  LAST_FROM = "";
-  LAST_PATHS = [];
-  LAST_ERROR = "";
+  resetStatus();
 
-  // 1) Env override (module OR json)
+  // 1) Env override first
   const envPath = process.env.TRIAL_QUESTIONS_PATH;
   if (envPath) {
-    const abs = path.isAbsolute(envPath) ? envPath : path.join(CWD, envPath);
-    if (envPath.endsWith(".mjs") || envPath.endsWith(".js")) {
-      if (await tryImportModule(pathToFileUrl(abs))) return true;
+    const abs = resolveCandidate(envPath);
+    // Try module then JSON
+    if (await tryLoadModule(abs)) return true;
+    if (await tryLoadJSON(abs)) return true;
+  }
+
+  // 2) Default candidates (module first, then json)
+  const candidates = [
+    "./trial-questions.mjs",
+    "./trial-questions.js",
+    "./trial-questions.json",
+    "./data/trial-questions.mjs",
+    "./data/trial-questions.js",
+    "./data/trial-questions.json",
+  ].map(resolveCandidate);
+
+  for (const p of candidates) {
+    if (p.endsWith(".mjs") || p.endsWith(".js")) {
+      if (await tryLoadModule(p)) return true;
     } else {
-      if (tryReadJson(abs)) return true;
+      if (await tryLoadJSON(p)) return true;
     }
   }
 
-  // 2) Prefer module in root
-  const modRoot = path.join(CWD, "trial-questions.mjs");
-  if (fs.existsSync(modRoot)) {
-    if (await tryImportModule(pathToFileUrl(modRoot))) return true;
-  }
-
-  // 3) JSON in root or /data fallback
-  const jsonRoot = path.join(CWD, "trial-questions.json");
-  if (tryReadJson(jsonRoot)) return true;
-
-  const jsonData = path.join(CWD, "data", "trial-questions.json");
-  if (tryReadJson(jsonData)) return true;
-
-  // 4) Also try next to this file (rare)
-  const modLocal = path.join(__dirname, "trial-questions.mjs");
-  if (fs.existsSync(modLocal)) {
-    if (await tryImportModule(pathToFileUrl(modLocal))) return true;
-  }
-  const jsonLocal = path.join(__dirname, "trial-questions.json");
-  if (tryReadJson(jsonLocal)) return true;
-
+  // Nothing loaded
+  _status.reason = "No valid questions file found or file is empty.";
   return false;
 }
 
-function pathToFileUrl(p) {
-  const u = new URL("file:///");
-  // normalize to posix-like
-  u.pathname = p.replace(/\\/g, "/");
-  return u.href;
-}
+// Top-level load on boot (Node 20+ supports TLA)
+await reloadTrialData();
 
-export function getTrialStatus() {
-  return {
-    loaded: Array.isArray(QUESTIONS) && QUESTIONS.length > 0,
-    from: LAST_FROM || "—",
-    count: Array.isArray(QUESTIONS) ? QUESTIONS.length : 0,
-    reason: LAST_REASON + (LAST_ERROR ? ` — ${LAST_ERROR}` : ""),
-    pathsTried: LAST_PATHS.slice(),
-    cwd: CWD
-  };
-}
-
+// Export live reference (importer reads current array)
 export { QUESTIONS };
