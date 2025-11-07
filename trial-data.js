@@ -34,3 +34,74 @@ function valid(qs) {
 }
 
 export const QUESTIONS = valid(fromFile) ? fromFile : BUILTIN;
+
+// --- Saber forge pools (by final alignment) ---
+export const FORGE_MATRIX = {
+  sith: {
+    colors: [
+      "Crimson", "Blood Red", "Magenta", "Black-Red (unstable)", "Inferno Scarlet"
+    ],
+    forms: [
+      "Single Blade", "Dual Blades", "Crossguard", "Curved-hilt Single"
+    ],
+    emitters: [
+      "Forked Emitter", "Vented Emitter", "Razor Crown", "Apex Fang"
+    ],
+    cores: [
+      "Bled Kyber", "Synthetic Kyber", "Cracked Kyber (chaotic)"
+    ],
+    adjectives: [
+      "jagged", "scorch-etched", "predatory", "night-forged", "vengeful"
+    ],
+    materials: [
+      "obsidian alloy", "voidsteel", "dark duralium", "slag-tempered iron"
+    ]
+  },
+  jedi: {
+    colors: [
+      "Blue", "Green", "Yellow", "White", "Cyan"
+    ],
+    forms: [
+      "Single Blade", "Double (Staff)", "Shoto Off-hand"
+    ],
+    emitters: [
+      "Temple-etched Emitter", "Channel-ring Emitter", "Pilgrim’s Guard"
+    ],
+    cores: [
+      "Attuned Kyber", "Lothal Kyber", "Ilum Kyber"
+    ],
+    adjectives: [
+      "harmonic", "serene", "balanced", "warden’s", "vigilant"
+    ],
+    materials: [
+      "titanium weave", "polished durasteel", "monkwood inlay", "silvered alloy"
+    ]
+  },
+  grey: {
+    colors: [
+      "Purple", "Amber", "Silver", "Teal", "Smoke-Violet"
+    ],
+    forms: [
+      "Single Blade", "Dual (Switchable Coupler)", "Split Saber"
+    ],
+    emitters: [
+      "Offset Emitter", "Split-socket Emitter", "Chevron Guard"
+    ],
+    cores: [
+      "Balanced Kyber", "Resonant Kyber", "Twin-phase Kyber"
+    ],
+    adjectives: [
+      "paradox-bound", "wayfarer’s", "echo-tuned", "equilibrium", "wanderer’s"
+    ],
+    materials: [
+      "gunmetal mosaic", "carbon-filament wrap", "weathered steel", "stone-set spine"
+    ]
+  }
+};
+
+// Optional convenience helper
+export function forgePoolFor(align = "grey") {
+  const key = String(align).toLowerCase();
+  return FORGE_MATRIX[key] || FORGE_MATRIX.grey;
+}
+
