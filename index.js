@@ -65,7 +65,6 @@ import { onMessageCreate as onDiceMsg } from "./economy/dice-commands.js";
 
 // --- Sith Trial + Forge ---
 import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trial-command.js";
-import { onMessageCreate as onForgeMsg } from "./forge-command.js";
 
 
 // ---------- Redis / misc ----------
