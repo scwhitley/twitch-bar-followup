@@ -3,86 +3,122 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+let QUESTIONS = [];
+let LAST_REASON = "Not loaded";
+let LAST_FROM = "";
+let LAST_PATHS = [];
+let LAST_ERROR = "";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const CWD = process.cwd();
 
-let QUESTIONS = [];
-let _status = {
-  ok: false,
-  reason: "not loaded",
-  pathTried: [],
-  loadedFrom: null,
-  count: 0,
-};
-
-// --- validation helpers
-function isQuestion(q) {
-  if (!q || typeof q.prompt !== "string" || !Array.isArray(q.answers)) return false;
-  if (q.answers.length !== 4) return false;
-  for (const a of q.answers) {
-    if (!a || typeof a.label !== "string" || typeof a.alignment !== "string") return false;
-    const al = a.alignment.toLowerCase();
-    if (!["sith", "jedi", "grey"].includes(al)) return false;
+function recordAttempt(p, ok, note) {
+  LAST_PATHS.push(p);
+  if (ok) {
+    LAST_FROM = p;
+    LAST_REASON = "Loaded OK";
+  } else if (note) {
+    LAST_ERROR = note;
+    LAST_REASON = "No valid JSON found";
   }
-  return true;
 }
 
-function validate(arr) {
-  return Array.isArray(arr) && arr.length >= 1 && arr.every(isQuestion);
-}
-
-function loadJson(p) {
+async function tryImportModule(modPath) {
   try {
-    const raw = fs.readFileSync(p, "utf8");
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-// Try several likely locations, plus env override
-function candidatePaths() {
-  const env = process.env.TRIAL_QUESTIONS_PATH;
-  const list = [];
-  if (env) list.push(path.resolve(env));
-  list.push(
-    path.resolve(__dirname, "trial-questions.json"),
-    path.resolve(__dirname, "data", "trial-questions.json"),
-    path.resolve(process.cwd(), "trial-questions.json"),
-    path.resolve(process.cwd(), "data", "trial-questions.json")
-  );
-  return list;
-}
-
-export function reloadTrialData() {
-  const tried = [];
-  let loaded = null;
-  for (const p of candidatePaths()) {
-    tried.push(p);
-    const j = loadJson(p);
-    if (validate(j)) {
-      QUESTIONS = j.map(q => ({
-        prompt: q.prompt,
-        answers: q.answers.map(a => ({
-          label: a.label,
-          alignment: a.alignment.toLowerCase(),
-        })),
-      }));
-      _status = { ok: true, reason: "loaded", pathTried: tried, loadedFrom: p, count: QUESTIONS.length };
+    const mod = await import(modPath + `?t=${Date.now()}`);
+    const q = mod.QUESTIONS || mod.default;
+    if (Array.isArray(q) && q.length) {
+      QUESTIONS = q;
+      recordAttempt(modPath, true);
       return true;
     }
+    recordAttempt(modPath, false, "Module did not export QUESTIONS or was empty");
+  } catch (e) {
+    recordAttempt(modPath, false, `Module import failed: ${e?.message || e}`);
   }
-  QUESTIONS = [];
-  _status = { ok: false, reason: "No valid JSON found", pathTried: tried, loadedFrom: null, count: 0 };
   return false;
 }
 
-export function getTrialStatus() {
-  return { ..._status };
+function tryReadJson(jsonPath) {
+  try {
+    if (!fs.existsSync(jsonPath)) {
+      recordAttempt(jsonPath, false, "File does not exist");
+      return false;
+    }
+    const raw = fs.readFileSync(jsonPath, "utf8");
+    const q = JSON.parse(raw);
+    if (!Array.isArray(q) || !q.length) {
+      recordAttempt(jsonPath, false, "Parsed but empty / not an array");
+      return false;
+    }
+    QUESTIONS = q;
+    recordAttempt(jsonPath, true);
+    return true;
+  } catch (e) {
+    recordAttempt(jsonPath, false, `JSON parse/read error: ${e?.message || e}`);
+    return false;
+  }
 }
 
-// Initial load (on cold start)
-reloadTrialData();
+export async function reloadTrialData() {
+  QUESTIONS = [];
+  LAST_REASON = "Not loaded";
+  LAST_FROM = "";
+  LAST_PATHS = [];
+  LAST_ERROR = "";
 
-// Read-only export the current array
+  // 1) Env override (module OR json)
+  const envPath = process.env.TRIAL_QUESTIONS_PATH;
+  if (envPath) {
+    const abs = path.isAbsolute(envPath) ? envPath : path.join(CWD, envPath);
+    if (envPath.endsWith(".mjs") || envPath.endsWith(".js")) {
+      if (await tryImportModule(pathToFileUrl(abs))) return true;
+    } else {
+      if (tryReadJson(abs)) return true;
+    }
+  }
+
+  // 2) Prefer module in root
+  const modRoot = path.join(CWD, "trial-questions.mjs");
+  if (fs.existsSync(modRoot)) {
+    if (await tryImportModule(pathToFileUrl(modRoot))) return true;
+  }
+
+  // 3) JSON in root or /data fallback
+  const jsonRoot = path.join(CWD, "trial-questions.json");
+  if (tryReadJson(jsonRoot)) return true;
+
+  const jsonData = path.join(CWD, "data", "trial-questions.json");
+  if (tryReadJson(jsonData)) return true;
+
+  // 4) Also try next to this file (rare)
+  const modLocal = path.join(__dirname, "trial-questions.mjs");
+  if (fs.existsSync(modLocal)) {
+    if (await tryImportModule(pathToFileUrl(modLocal))) return true;
+  }
+  const jsonLocal = path.join(__dirname, "trial-questions.json");
+  if (tryReadJson(jsonLocal)) return true;
+
+  return false;
+}
+
+function pathToFileUrl(p) {
+  const u = new URL("file:///");
+  // normalize to posix-like
+  u.pathname = p.replace(/\\/g, "/");
+  return u.href;
+}
+
+export function getTrialStatus() {
+  return {
+    loaded: Array.isArray(QUESTIONS) && QUESTIONS.length > 0,
+    from: LAST_FROM || "—",
+    count: Array.isArray(QUESTIONS) ? QUESTIONS.length : 0,
+    reason: LAST_REASON + (LAST_ERROR ? ` — ${LAST_ERROR}` : ""),
+    pathsTried: LAST_PATHS.slice(),
+    cwd: CWD
+  };
+}
+
 export { QUESTIONS };
