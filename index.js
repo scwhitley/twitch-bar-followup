@@ -25,6 +25,10 @@ import {
   onInteractionCreate as onTravelerInteraction,
 } from "./traveler-command.js";
 
+// --------- Send Drink Imports -----------
+import { GIFT_QUIPS, THANKS } from "./bar-quips.js";
+
+
 // --------- Traveler Confirm (+1000 DD once) --------
 import {
   onMessageCreate as onTravelerConfirmMsg,
@@ -944,6 +948,35 @@ app.get("/health", (_req, res) => res.type("text/plain").send("OK"));
  function isValidStreamId(id) {
   return /^\d{4}-\d{2}-\d{2}/.test(String(id)); // e.g., 2025-10-20 or 2025-10-20-2
 }
+
+// ---------- Routes for send drinks -----
+
+function titleizeDrink(slug){
+  const s = String(slug||"").trim();
+  if (!s) return "a drink";
+  const low = s.toLowerCase();
+  const map = {
+    vodka:"Vodka", whiskey:"Whiskey", gin:"Gin", rum:"Rum", tequila:"Tequila",
+    lightbeer:"Light Beer", darkbeer:"Dark Beer", redwine:"Red Wine", espresso:"Espresso", bourbon:"Bourbon"
+  };
+  return map[low] || (s[0].toUpperCase() + s.slice(1));
+}
+
+app.get("/senddrink/quip", (req, res) => {
+  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY) {
+    return res.status(401).type("text/plain").send("unauthorized");
+  }
+
+  const from = String(req.query.from || "").replace(/^@/,"").trim() || "someone";
+  const to   = String(req.query.to   || "").replace(/^@/,"").trim() || "you";
+  const drinkTitle = titleizeDrink(req.query.drink || "drink");
+
+  const pick = GIFT_QUIPS[Math.floor(Math.random() * GIFT_QUIPS.length)]
+            || ((t,f,d)=>`“${f} bought ${t} a ${d}. I just pour.”`);
+  const line = pick(`@${to}`, `@${from}`, drinkTitle);
+
+  return res.type("text/plain").send(line);
+});
 
 // ---------- /love (Redis-backed) ----------
 // Returns ONE love line and logs it under a stream bucket.
