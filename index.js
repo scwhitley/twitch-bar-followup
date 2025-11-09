@@ -61,7 +61,7 @@ import { onMessageCreate as onBarMsg } from "./economy/vendor-bar.js"; // Stirre
 import { onMessageCreate as onDiceMsg } from "./economy/dice-commands.js";
 
 // --- Sith Trial + Forge ---
-import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trialsial/trial-command.js";
+import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trials/trial-command.js";
 
 
 // ---------- Redis / misc ----------
