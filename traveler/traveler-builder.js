@@ -1,6 +1,6 @@
 // traveler-builder.js
-import { makeRng, seedFrom, pick } from "./rng.js";
-import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
+import { makeRng, seedFrom, pick } from "../rng.js";
+import { maleFirst, femaleFirst, neutralFirst, lastNames } from "../names.js";
 import {
   REROLLABLE_FIELDS, RACES, REGIONS, AFFINITIES, EMOTION_TRIGGERS,
   MANIFESTATIONS, CLASSES, FACTIONS, START_CORRUPTION,

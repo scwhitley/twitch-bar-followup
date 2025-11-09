@@ -1,6 +1,6 @@
 // traveler-confirm.js
 import { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } from "discord.js";
-import { confirmTraveler } from "./economy/party-core.js";
+import { confirmTraveler } from "../economy/party-core.js";
 
 export async function onMessageCreate(msg) {
   if (msg.author.bot) return;
