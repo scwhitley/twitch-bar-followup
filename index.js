@@ -20,21 +20,21 @@ import { LOVE_TIERS } from "./love-tiers.js";
 import { DUEL_ROASTS, RALLY_LINES, BAR_EVENTS, INVASION_STARTS } from "./faction-text.js";
 
 // --------- Traveler Creation (your sheet builder / rerolls) --------
-import { onTravelerMsg, onTravelerInteraction } from "./traveler";
+import { onTravelerMsg, onTravelerInteraction } from "./traveler/index.js";
 
 // --------- Send Drink Imports -----------
 import { GIFT_QUIPS, THANKS } from "./bar-quips.js";
 
 
 // --------- Traveler Confirm (+1000 DD once) --------
-import { onTravelerConfirmMsg, onTravelerConfirmInt } from "./traveler";
+import { onTravelerConfirmMsg, onTravelerConfirmInt } from "./traveler/index.js";
 
 // ---------- Forge ----------
 import { onMessageCreate as onForgeMsg } from "./forge-command.js";
 
 // ---------- Abilities + Skills ----------
-import { onAbilitiesMsg, onAbilitiesIx } from "./traveler";
-import { onSkillsMsg, onSkillsIx }       from "./traveler";
+import { onAbilitiesMsg, onAbilitiesIx } from "./traveler/index.js";
+import { onSkillsMsg, onSkillsIx }       from "./traveler/index.js";
 
 // ---------- Conditions & Checks ----------
 import { onMessageCreate as onCondsMsg, onInteractionCreate as onCondsIx } from "./conditions-commands.js";
