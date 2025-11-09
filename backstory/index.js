@@ -1,7 +1,7 @@
 import { Gender } from "./gender.js";
-import { makeRng, seedFrom, pick } from "./rng.js";
+import { makeRng, seedFrom, pick } from "../rng.js";
 import { ORIGINS } from "./origins.js";
-import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
+import { maleFirst, femaleFirst, neutralFirst, lastNames } from "../names.js";
 import { applyPronouns, pronounsFor } from "./pronouns.js";
 
 
@@ -10,11 +10,11 @@ const PERSONALITIES = [
 ];
 
 const GOALS = [
-  "unseat a corrupt guildmaster","wipe a debt ledger clean","reclaim a stolen relic","found a new order"
+  "unseat a corrupt guildmaster","wipe a debt ledger clean","reclaim a stolen relic","found a new order", "avenge their mothers death", "track down the person who killed their entire clan"
 ];
 
 const FLAWS = [
-  "trusts plans more than people","holds grudges","tempted by quick power","avoids vulnerability"
+  "trusts plans more than people","holds grudges","tempted by quick power","avoids vulnerability", "zero patience", "despises Humans"
 ];
 
 const QUIRKS = [
@@ -58,7 +58,7 @@ export function generateBackstory({ userId, gender = Gender.UNKNOWN, overrideSee
   const flaw = pick(rng, FLAWS);
   const quirk = pick(rng, QUIRKS);
   const heightBuild = pick(rng, [
-    "tall, wiry","compact, powerful","broad-shouldered","lithe and poised","average height, scarred knuckles",
+    "tall, wiry","compact, powerful","broad-shouldered","lithe and poised","average height, scarred knuckles", "thick AF"
   ]);
   const age = 18 + Math.floor(rng() * 22); // 18–39
 
