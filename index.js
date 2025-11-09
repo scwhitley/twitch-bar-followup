@@ -1,6 +1,6 @@
 // index.js
 console.log("[BOOT] process.cwd() =", process.cwd());
-import { reloadTrialData, getTrialStatus } from "./trial-data.js";
+import { reloadTrialData, getTrialStatus } from "./trials/trial-data.js";
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -61,7 +61,7 @@ import { onMessageCreate as onBarMsg } from "./economy/vendor-bar.js"; // Stirre
 import { onMessageCreate as onDiceMsg } from "./economy/dice-commands.js";
 
 // --- Sith Trial + Forge ---
-import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trial-command.js";
+import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trialsial/trial-command.js";
 
 
 // ---------- Redis / misc ----------
