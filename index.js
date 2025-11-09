@@ -755,8 +755,6 @@ const CHEERS = [
 
 
 
-// ---------------- State Counter ----------------
-let flightFiredCount = 0;
 
 // ---------------- State counters ----------------
 let firedCount = 0;
@@ -1646,130 +1644,6 @@ app.get("/debug/award", async (req, res) => {
   const result = await seAddPoints(user, amount);
   return res.type("text/plain").send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
 });
-
-// ---------------- Flight Snack Command Pools ----------------
-const FLIGHT_SNACKS = {
-  coach: {
-    snacks: [
-      "pretzels", "salted peanuts", "mini cookies", "trail mix", "granola bar",
-      "cheese crackers", "popcorn", "fruit snacks", "rice cakes", "potato chips"
-    ],
-    drinks: [
-      "water", "cola", "ginger ale", "lemonade", "iced tea",
-      "apple juice", "orange juice", "Sprite", "root beer", "cranberry juice"
-    ]
-  },
-  business: {
-    snacks: [
-      "hummus with pita chips", "cheese cubes", "mixed nuts", "chocolate truffles", "mini croissants",
-      "dried mango slices", "Greek yogurt", "veggie sticks with ranch", "mini muffins", "smoked almonds"
-    ],
-    drinks: [
-      "sparkling water", "cold brew coffee", "craft soda", "green tea", "coconut water",
-      "Arnold Palmer", "cherry limeade", "kombucha", "espresso shot", "blackberry lemonade"
-    ]
-  },
-  firstclass: {
-    snacks: [
-      "prosciutto-wrapped melon", "Brie with fig jam", "truffle popcorn", "ahi tuna bites", "mini charcuterie board",
-      "Caprese skewers", "lobster sliders", "caviar on blinis", "macarons", "chocolate-dipped strawberries"
-    ],
-    drinks: [
-      "champagne", "Pinot Noir", "matcha latte", "elderflower tonic", "craft cocktail (virgin)",
-      "mango lassi", "hibiscus tea", "sparkling rosé", "cold-pressed juice", "saffron-infused lemonade"
-    ]
-  }
-};
-
-// ---------------- Flight Attendant Quips ----------------
-const FLIGHT_ATTENDANT_QUIPS = [
-  (user) => `“You're lucky I'm still sober, ${user}.”`,
-  (user) => `“Enjoy your snack, ${user}. I microwaved it myself.”`,
-  (user) => `“This is the best we could do at 30,000 feet, ${user}.”`,
-  (user) => `“Don’t ask for seconds, ${user}. I’m not your personal chef.”`,
-  (user) => `“Smile and chew, ${user}. That’s all we ask.”`,
-  (user) => `“If you need anything else, press the button and pray.”`,
-  (user) => `“You’re my favorite passenger today, ${user}. Don’t tell the others.”`,
-  (user) => `“I spit in the champagne, ${user}. Just kidding. Or am I?”`,
-  (user) => `“This snack pairs well with turbulence, ${user}.”`,
-  (user) => `“You’re welcome, ${user}. I deserve a raise.”`,
-  (user) => `“I used to dream of Broadway. Now I serve pretzels to ${user}.”`,
-  (user) => `“You again, ${user}? Fine. Here’s your snack.”`,
-  (user) => `“I’m not mad, ${user}. Just disappointed.”`,
-  (user) => `“This snack is more gourmet than your outfit, ${user}.”`,
-  (user) => `“I gave you the good stuff, ${user}. Don’t tell coach.”`
-];
-
-// ---------------- Helper: Build Snack Response ----------------
-const getFlightSnackCombo = (tier, user) => {
-  const pool = FLIGHT_SNACKS[tier];
-  if (!pool) return `${user} requested a snack, but the galley is empty.`;
-
-  const snack = pool.snacks[Math.floor(Math.random() * pool.snacks.length)];
-  const drink = pool.drinks[Math.floor(Math.random() * pool.drinks.length)];
-  const quip = FLIGHT_ATTENDANT_QUIPS[Math.floor(Math.random() * FLIGHT_ATTENDANT_QUIPS.length)](user);
-
-  return `Here is your food, ${user}: ${snack} and ${drink}. ${quip}`;
-};
-
-// ---------------- Flight Snack Endpoints ----------------
-app.get("/flight/coachsnacks", async (req, res) => {
-  const user = (req.query.user || "Guest").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
-  await sleep(delayMs);
-  const msg = getFlightSnackCombo("coach", user);
-  res.type("text/plain").send(msg);
-});
-
-app.get("/flight/business", async (req, res) => {
-  const user = (req.query.user || "Guest").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
-  await sleep(delayMs);
-  const msg = getFlightSnackCombo("business", user);
-  res.type("text/plain").send(msg);
-});
-
-app.get("/flight/firstclass", async (req, res) => {
-  const user = (req.query.user || "Guest").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
-  await sleep(delayMs);
-  const msg = getFlightSnackCombo("firstclass", user);
-  res.type("text/plain").send(msg);
-});
-
-// 🔊 Send message to StreamElements chat
-const sendChatMessage = async (message) => {
-  try {
-    await axios.post('https://api.streamelements.com/kappa/v2/bot/message', {
-      channel: 'd4rth_distortion', // Replace with your Twitch channel name
-      message: message
-    }, {
-      headers: {
-        Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJjaXRhZGVsIiwiZXhwIjoxNzcyOTkyMDE0LCJqdGkiOiJmZDg3NjNhYS03NzljLTQzMjAtOTE5MS0wMTAwNmM4M2VhNTkiLCJjaGFubmVsIjoiNjhiYzI2ZWM2MjU0OWUwZTU0YTRjNzFmIiwicm9sZSI6Im93bmVyIiwiYXV0aFRva2VuIjoiWXRzbmpPa2VNak03WjJvX2llVTVUd0xQQmNqS3FtVkhtTkt3N0lPV2FlY0I3OTlnIiwidXNlciI6IjY4YmMyNmVjNjI1NDllMGU1NGE0YzcxZSIsInVzZXJfaWQiOiIyN2Y3NDkzYS1jMWMxLTRkODctYmFmYy05YjM1ZTQwMjBhMTQiLCJ1c2VyX3JvbGUiOiJjcmVhdG9yIiwicHJvdmlkZXIiOiJ0d2l0Y2giLCJwcm92aWRlcl9pZCI6IjEzNjM0MDg1NzEiLCJjaGFubmVsX2lkIjoiMzkyZTJlOWMtN2EyNC00ZDIzLWE5MWYtYjEwNWJhMGYyYTJmIiwiY3JlYXRvcl9pZCI6ImExODI5YzdmLTZjOWQtNDcyMi1hN2U3LWUxMWI5OTA4YTAxNiJ9.7qRNHBvVqFC-EvXazbKD4gYmWBjBc9nlfkwbT363Auk` // Replace with your StreamElements JWT token
-      }
-    });
-  } catch (err) {
-    console.error('Error sending chat message:', err.message);
-  }
-};
-
-app.get('/diagnosis', async (req, res) => {
-  const { user, key } = req.query;
-  if (key !== 'd4rth-distortion') return res.status(403).send('Forbidden');
-
-  const displayName = user || 'Guest';
-
-  // Respond immediately to StreamElements
-  res.type("text/plain").send(`${displayName} asked D4rth Distortion to run a deep diagnosis on them.`);
-
-  // Nightbot will handle the follow-up message 6 seconds later
-});
-
-
-
-
-
-
 
 // ===================== GRASS ENTREPRENEUR =====================
 
