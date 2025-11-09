@@ -20,28 +20,22 @@ import { LOVE_TIERS } from "./love-tiers.js";
 import { DUEL_ROASTS, RALLY_LINES, BAR_EVENTS, INVASION_STARTS } from "./faction-text.js";
 
 // --------- Traveler Creation (your sheet builder / rerolls) --------
-import {
-  onMessageCreate as onTravelerMsg,
-  onInteractionCreate as onTravelerInteraction,
-} from "./traveler-command.js";
+import { onTravelerMsg, onTravelerInteraction } from "./traveler/index.js";
 
 // --------- Send Drink Imports -----------
 import { GIFT_QUIPS, THANKS } from "./bar-quips.js";
 
 
 // --------- Traveler Confirm (+1000 DD once) --------
-import {
-  onMessageCreate as onTravelerConfirmMsg,
-  onInteractionCreate as onTravelerConfirmInt,
-} from "./traveler-confirm.js";
+import { onTravelerConfirmMsg, onTravelerConfirmInt } from "./traveler/index.js";
 
 // ---------- Forge ----------
 import { onMessageCreate as onForgeMsg } from "./forge-command.js";
 
 
 // ---------- Abilities + Skills ----------
-import { onMessageCreate as onAbilitiesMsg, onInteractionCreate as onAbilitiesIx } from "./traveler-abilities.js";
-import { onMessageCreate as onSkillsMsg,    onInteractionCreate as onSkillsIx }    from "./traveler-skills.js";
+import { onAbilitiesMsg, onAbilitiesIx } from "./traveler/index.js";
+import { onSkillsMsg, onSkillsIx } from "./traveler/index.js";
 
 // ---------- Conditions & Checks ----------
 import { onMessageCreate as onCondsMsg, onInteractionCreate as onCondsIx } from "./conditions-commands.js";
