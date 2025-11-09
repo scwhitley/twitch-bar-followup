@@ -732,38 +732,6 @@ const COMPLAINTS = [
   (user, issue) => `Bartender to ${user}: “Alright ${user}, I’ll remake it… but this time I’m charging you emotional labor.”`,
 ];
 
-// ---------------- Flight Attendant Complaint Quips ----------------
-const FLIGHT_COMPLAINTS = [
-  (user, issue) => `Flight Attendant to ${user}: “Oh, ${issue || "that snack"} not to your liking? I’ll alert the captain… to laugh at you.”`,
-  (user, issue) => `Flight Attendant to ${user}: “We ran out of ${issue || "that drink"} after the turbulence party in row 12.”`,
-  (user, issue) => `Flight Attendant to ${user}: “That ${issue || "meal"} was curated by Michelin-starred pigeons. Show some respect.”`,
-  (user, issue) => `Flight Attendant to ${user}: “I’ll remake it… but this time I’m charging you emotional labor.”`,
-  (user, issue) => `Flight Attendant to ${user}: “You want gourmet service in coach? That’s adorable.”`,
-  (user, issue) => `Flight Attendant to ${user}: “I used to be a barista. Now I microwave pretzels for ${user}.”`,
-  (user, issue) => `Flight Attendant to ${user}: “OMG I'm so sorry! Here’s a new snack. Please don’t tell D4rth Distortion.”`,
-  (user, issue) => `Flight Attendant to ${user}: “We call that ‘airline flavor’. It’s rustic.”`,
-  (user, issue) => `Flight Attendant to ${user}: “If you wanted perfection, you should’ve flown private.”`,
-  (user, issue) => `Flight Attendant to ${user}: “I’ll fix it, but I’m writing a poem about this trauma later.”`,
-  (user, issue) => `Flight Attendant to ${user}: “I don’t get paid enough to care. Take it up with the clouds.”`,
-  (user, issue) => `Flight Attendant to ${user}: “I substituted your ${issue || "snack"} with vibes. Hope that’s okay.”`,
-];
-
-// ---------------- Flight Complaint Endpoint ----------------
-app.get("/flightcomplaint", async (req, res) => {
-  const bare = req.query.bare === "1";
-  const user = (req.query.user || "").toString();
-  const issue = (req.query.issue || "").toString().slice(0, 120);
-  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
-
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
-    return res.status(401).type("text/plain").send("unauthorized");
-
-  await sleep(delayMs);
-  const full = sample(FLIGHT_COMPLAINTS)(user || "passenger", issue);
-  if (bare) return res.type("text/plain").send(full.replace(/^Flight Attendant to .*?:\s*/, ""));
-  return res.type("text/plain").send(full);
-});
-
 
 const STORM_OFF = [
   (user) => `The bartender glares at ${user}, rips off the apron, and storms out screaming “Y’all don’t deserve me!”`,
@@ -785,119 +753,10 @@ const CHEERS = [
   (user) => `Bartender to ${user}: “Gee wilikers pal thank you very much! That was a splendifurous thing to say! Neato dude!”`,
 ];
 
-// ---------------- Flight Attendant Firepack ----------------
-const FLIGHT_STORM_OFF = [
-  (user) => `The flight attendant was mid-rant about ${user} asking for extra peanuts when D4rth Distortion grabbed them and yeeted them out the emergency exit.`,
-  (user) => `Just as the flight attendant finished flipping off row 12 and calling ${user} “a snackless gremlin,” D4rth Distortion stormed in and launched them out the hatch.`,
-  (user) => `The attendant was trying to unionize the snack cart when D4rth Distortion burst from the cockpit and sent them flying into the stratosphere.`,
-  (user) => `They were composing a breakup haiku about ${user} on a napkin when D4rth Distortion snatched them and yeeted them into the clouds.`,
-  (user) => `Right after they spilled cranberry juice on ${user} and said “Oops, turbulence,” D4rth Distortion came in hot and ejected them like a soda can.`,
-  (user) => `They were halfway through a TikTok dance in the aisle when D4rth Distortion tackled them and yeeted them into orbit.`,
-  (user) => `The attendant was trying to charge ${user} $50 for a warm Sprite when D4rth Distortion kicked open the hatch and sent them skydiving without a parachute.`,
-  (user) => `They were whispering “I hate this airline” into the intercom when D4rth Distortion grabbed them by the collar and launched them into the jet stream.`,
-  (user) => `They were about to serve ${user} a single pretzel and call it “gourmet” when D4rth Distortion intervened with a heroic yeet.`,
-  (user) => `The attendant was arguing with the autopilot about snack distribution when D4rth Distortion emerged and flung them into the clouds like a paper plane.`,
-];
 
-
-const FLIGHT_CHEERS = [
-  (user) => `Flight Attendant to ${user}: “Appreciate you! May your snacks be crunchy and your Wi-Fi never drop.”`,
-  (user) => `Flight Attendant to ${user}: “Cheers, legend. Next snack comes with extra style points.”`,
-  (user) => `Flight Attendant to ${user}: “Verified: you have excellent taste and impeccable vibes.”`,
-  (user) => `Flight Attendant to ${user}: “Gratitude noted. Hydration and happiness incoming.”`,
-  (user) => `Flight Attendant to ${user}: “Thanks fam. Snack cart smiles upon you.”`,
-  (user) => `Flight Attendant to ${user}: “Can you tell D4rth Distortion I got a good review?”`,
-  (user) => `Flight Attendant to ${user}: “Gee wilikers pal thank you very much! That was a splendiferous thing to say! Neato dude!”`,
-];
 
 // ---------------- State Counter ----------------
 let flightFiredCount = 0;
-
-// ---------------- Flight Firepack Endpoint ----------------
-app.get("/flightfirepack", async (req, res) => {
-  const user = (req.query.user || "").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
-
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
-    return res.status(401).type("text/plain").send("unauthorized");
-
-  await sleep(delayMs);
-  const storm = sample(FLIGHT_STORM_OFF)(user || "the Realm");
-  flightFiredCount += 1;
-  const hire = `A new flight attendant, ${randomBartenderName()}, has now taken over the Distorted Realm airline to better serve the skies. (Fired so far: ${flightFiredCount})`;
-  return res.type("text/plain").send(`${storm} ${hire}`);
-});
-
-const randomFlightAttendantName = () =>
-  `${sample(BARTENDER_FIRST)} ${sample(BARTENDER_LAST)}`;
-
-app.get("/flightfirepack", async (req, res) => {
-  const user = (req.query.user || "").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
-
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
-    return res.status(401).type("text/plain").send("unauthorized");
-
-  await sleep(delayMs);
-  const storm = sample(FLIGHT_STORM_OFF)(user || "the Realm");
-  flightFiredCount += 1;
-
-  // Send initial fire message
-  res.type("text/plain").send(storm);
-
-  // After 5 seconds, announce new hire
-  setTimeout(() => {
-    const newHire = randomFlightAttendantName();
-    const msg = `A new flight attendant, ${newHire}, has teleported onto the plane to better serve the skies. (Fired so far: ${flightFiredCount})`;
-    // You can log this, send to overlay, or trigger Nightbot externally
-    console.log("[Nightbot follow-up]", msg);
-    // Optional: expose via a shared queue or webhook if needed
-  }, 5000);
-});
-
-// Serve /public if not already handled
-app.use(express.static("public"));
-
-// In-memory trigger flag for the overlay
-let FOOD_TRIGGER_TS = 0;
-
-// POST /trigger/food-command   -> flip the trigger flag
-app.post("/trigger/food-command", express.json(), (req, res) => {
-  FOOD_TRIGGER_TS = Date.now();
-  res.json({ ok: true, at: FOOD_TRIGGER_TS });
-});
-
-// GET /api/food-command/next   -> overlay polls this; one-shot trigger
-app.get("/api/food-command/next", (req, res) => {
-  if (FOOD_TRIGGER_TS) {
-    const at = FOOD_TRIGGER_TS;
-    FOOD_TRIGGER_TS = 0;
-    return res.json({ trigger: true, at });
-  }
-  res.json({ trigger: false });
-});
-
-// GET /food-command  -> serves the overlay page
-app.get("/food-command", (req, res) => {
-  const filePath = path.join(process.cwd(), "public", "food-command", "index.html");
-  res.sendFile(filePath);
-});
-
-// ---------------- Flight Cheers Endpoint ----------------
-app.get("/flightcheers", async (req, res) => {
-  const bare = req.query.bare === "1";
-  const user = (req.query.user || "").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 5000);
-
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
-    return res.status(401).type("text/plain").send("unauthorized");
-
-  await sleep(delayMs);
-  const full = sample(FLIGHT_CHEERS)(user || "passenger");
-  if (bare) return res.type("text/plain").send(full.replace(/^Flight Attendant to .*?:\s*/, ""));
-  return res.type("text/plain").send(full);
-});
-
 
 // ---------------- State counters ----------------
 let firedCount = 0;
