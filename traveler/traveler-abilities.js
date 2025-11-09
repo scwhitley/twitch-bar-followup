@@ -12,7 +12,7 @@ import {
   makeRng,
   rollAbilityArray,
   modsFrom,
-} from "./abilities-core.js";
+} from "../abilities-core.js";
 
 const redis = Redis.fromEnv();
 
