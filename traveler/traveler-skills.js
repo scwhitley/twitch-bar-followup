@@ -1,7 +1,7 @@
 // traveler-skills.js
 import { Redis } from "@upstash/redis";
 import { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import { SKILLS } from "./skills-data.js";
+import { SKILLS } from "../skills-data.js";
 
 const redis = Redis.fromEnv();
 const CONFIRM_KEY = (uid) => `trav:${uid}:confirmed`;     // set by your existing !confirmchar flow
