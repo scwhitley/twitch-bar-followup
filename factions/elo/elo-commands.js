@@ -1,21 +1,18 @@
 // /factions/elo/elo-commands.js
-import { EmbedBuilder } from "discord.js";
-import { getElo } from "./elo-core.js";
+import { sanitizeOneLine } from "../core/faction-utils.js";
+import { ensureElo } from "./elo-core.js";
+import { getAlignment } from "../core/alignment-core.js";
 
 export async function onMessageCreate(msg) {
   if (msg.author.bot) return;
-  const [cmd] = (msg.content || "").trim().toLowerCase().split(/\s+/);
+  const [cmd, arg] = msg.content.trim().split(/\s+/, 2);
+  if (!["!elo", "!points", "!factionpoints"].includes(cmd?.toLowerCase())) return;
 
-  if (cmd !== "!elo" && cmd !== "!points" && cmd !== "!factionpoints") return;
+  const whoMention = msg.mentions?.users?.first();
+  const who = sanitizeOneLine((whoMention?.username || arg || msg.author.username) || "")
+    .replace(/^@+/, "").toLowerCase();
 
-  const target = msg.mentions.users.first() || msg.author;
-  const username = target.username;
-  const value = await getElo(username);
-
-  const e = new EmbedBuilder()
-    .setTitle("🧮 Faction ELO")
-    .setDescription(`**${username}** has **${value}** faction points.`)
-    .setColor("Purple");
-
-  return void msg.channel.send({ embeds: [e] });
+  const [elo, align] = await Promise.all([ensureElo(who), getAlignment(who)]);
+  const side = align ? align[0].toUpperCase() + align.slice(1) : "Unaligned";
+  return void msg.reply(`@${who} — ELO **${elo}** (${side})`);
 }
