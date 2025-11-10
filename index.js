@@ -65,6 +65,9 @@ import { onMessageCreate as onDiceMsg } from "./economy/dice-commands.js";
 // --- Sith Trial ---
 import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trials/trial-command.js";
 
+// --- Faction Folder Imports ---
+import { factionsRouter, onEloMsg } from "./factions/index.js";
+
 // ---------- Redis / misc ----------
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
