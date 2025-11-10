@@ -1,49 +1,51 @@
 // index.js
 console.log("[BOOT] process.cwd() =", process.cwd());
-import { reloadTrialData, getTrialStatus } from "./trials/trial-data.js";
+
+import "dotenv/config";
+
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
-import "dotenv/config";
-import { Client, GatewayIntentBits, Partials } from "discord.js";
 import fs from "fs";
 import axios from "axios";
 import { fetch as undiciFetch } from "undici";
+import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { Redis } from "@upstash/redis";
+
+// ------- Shared / Economy core -------
 import { deDupeGuard } from "./economy/econ-core.js";
 
-// ---------- Core / Shared (keep if you still use them elsewhere) ----------
+// ---------- Core / Shared (keep if still used elsewhere) ----------
 import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { LOVE_TIERS } from "./love-tiers.js";
 import { DUEL_ROASTS, RALLY_LINES, BAR_EVENTS, INVASION_STARTS } from "./faction-text.js";
 
-// --------- Traveler Creation (your sheet builder / rerolls) --------
-import { onTravelerMsg, onTravelerInteraction } from "./traveler/index.js";
+// --------- Traveler (facade from /traveler) ---------
+import {
+  onTravelerMsg,
+  onTravelerInteraction,
+  onTravelerConfirmMsg,
+  onTravelerConfirmInt,
+  onAbilitiesMsg,
+  onAbilitiesIx,
+  onSkillsMsg,
+  onSkillsIx,
+} from "./traveler/index.js";
 
 // --------- Send Drink Imports -----------
 import { GIFT_QUIPS, THANKS } from "./bar-quips.js";
 
-
-// --------- Traveler Confirm (+1000 DD once) --------
-import { onTravelerConfirmMsg, onTravelerConfirmInt } from "./traveler/index.js";
-
 // ---------- Forge ----------
 import { onMessageCreate as onForgeMsg } from "./forge-command.js";
-
-// ---------- Abilities + Skills ----------
-import { onAbilitiesMsg, onAbilitiesIx } from "./traveler/index.js";
-import { onSkillsMsg, onSkillsIx }       from "./traveler/index.js";
 
 // ---------- Conditions & Checks ----------
 import { onMessageCreate as onCondsMsg, onInteractionCreate as onCondsIx } from "./conditions-commands.js";
 import { onMessageCreate as onChecksMsg, onInteractionCreate as onChecksIx } from "./checks-command.js";
 
-
 // --------- Party + Workboard -------
 import { onMessageCreate as onPartyMsg } from "./economy/party-commands.js";
-
 import {
   onMessageCreate as onWorkboardMsg,
   onInteractionCreate as onWorkboardIx
@@ -54,15 +56,14 @@ import { onMessageCreate as onBankMsg } from "./economy/bank-commands.js";
 import { onMessageCreate as onInventoryMsg } from "./economy/inventory-commands.js";
 import { onMessageCreate as onAdminEconMsg } from "./economy/admin-commands.js";
 
-// ---------- Vendors (keep only the ones you use) ----------
+// ---------- Vendors ----------
 import { onMessageCreate as onBarMsg } from "./economy/vendor-bar.js"; // Stirred Veil Bar
 
 // ---------- Dice ----------
 import { onMessageCreate as onDiceMsg } from "./economy/dice-commands.js";
 
-// --- Sith Trial + Forge ---
+// --- Sith Trial ---
 import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trials/trial-command.js";
-
 
 // ---------- Redis / misc ----------
 export const redis = new Redis({
@@ -153,20 +154,18 @@ client.on("messageCreate", async (msg) => {
   // Dice
   await run(onDiceMsg,       "dice");
 
-// messageCreate dispatcher
-  await run(onTrialMsg);
-  await run(onForgeMsg);
-  
+  // Trials + Forge
+  await run(onTrialMsg,      "trial");
+  await run(onForgeMsg,      "forge");
 });
 
 client.on("interactionCreate", async (ix) => {
-  // Run a handler once per interaction per tag (30s TTL)
   const runI = async (fn, tag) => {
     if (!fn) return;
     try {
       const id = ix.id || `${ix.user?.id}:${ix.customId || "unknown"}`;
       const ok = await deDupeGuard(`i:${id}:${tag}`, 30);
-      if (!ok) return; // already handled
+      if (!ok) return;
       await fn(ix);
     } catch (e) {
       console.error("[interaction error]", tag || fn?.name, e);
@@ -190,13 +189,12 @@ client.on("interactionCreate", async (ix) => {
   await runI(onTrialIx,             "trial-int");
 });
 
-
 // One ready log (use once to avoid dupes on hot-reload)
 client.once("ready", () => console.log(`Logged in as ${client.user.tag}`));
 
 // ---- NO OTHER messageCreate / interactionCreate listeners below this ----
 
-// Login (keep your TOKEN definition above this)
+// Login
 client.login(TOKEN).catch((err) => {
   console.error("Discord login failed:", err);
   process.exit(1);
