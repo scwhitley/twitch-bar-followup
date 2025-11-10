@@ -1,6 +1,6 @@
 // index.js
 console.log("[BOOT] process.cwd() =", process.cwd());
-import { reloadTrialData, getTrialStatus } from "./trial-data.js";
+import { reloadTrialData, getTrialStatus } from "./trials/trial-data.js";
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -61,7 +61,7 @@ import { onMessageCreate as onBarMsg } from "./economy/vendor-bar.js"; // Stirre
 import { onMessageCreate as onDiceMsg } from "./economy/dice-commands.js";
 
 // --- Sith Trial + Forge ---
-import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trial-command.js";
+import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trials/trial-command.js";
 
 
 // ---------- Redis / misc ----------
@@ -531,16 +531,16 @@ let FORCE_LAST_FINISHED_AT = 0;
 // Questions (ASCII-safe)
 const FORCE_QUESTIONS = [
   {
-    q: "Q1 — Choose your path: 1) Peace  2) Power",
-    w: [ { jedi: 2 }, { sith: 2 } ]
+    q: "Q1 — Choose your path: 1) Peace  2) Power  3) Balance",
+    w: [ { jedi: 2 }, { sith: 2 }, { gray: 2 } ]
   },
   {
-    q: "Q2 — What matters more: 1) Order  2) Freedom",
-    w: [ { jedi: 1 }, { gray: 1 } ]
+    q: "Q2 — What matters more: 1) Order  2) Freedom  3) Chaos",
+    w: [ { jedi: 1 }, { gray: 1 }, { sith: 1 } ]
   },
   {
-    q: "Q3 — Guide your heart: 1) Serenity  2) Passion",
-    w: [ { jedi: 2 }, { sith: 2 } ]
+    q: "Q3 — Guide your heart: 1) Serenity  2) Passion  3) The Force",
+    w: [ { jedi: 2 }, { sith: 2 }, { grey: 2 } ]
   }
 ];
 
@@ -773,38 +773,6 @@ const COMPLAINTS = [
   (user, issue) => `Bartender to ${user}: “Alright ${user}, I’ll remake it… but this time I’m charging you emotional labor.”`,
 ];
 
-// ---------------- Flight Attendant Complaint Quips ----------------
-const FLIGHT_COMPLAINTS = [
-  (user, issue) => `Flight Attendant to ${user}: “Oh, ${issue || "that snack"} not to your liking? I’ll alert the captain… to laugh at you.”`,
-  (user, issue) => `Flight Attendant to ${user}: “We ran out of ${issue || "that drink"} after the turbulence party in row 12.”`,
-  (user, issue) => `Flight Attendant to ${user}: “That ${issue || "meal"} was curated by Michelin-starred pigeons. Show some respect.”`,
-  (user, issue) => `Flight Attendant to ${user}: “I’ll remake it… but this time I’m charging you emotional labor.”`,
-  (user, issue) => `Flight Attendant to ${user}: “You want gourmet service in coach? That’s adorable.”`,
-  (user, issue) => `Flight Attendant to ${user}: “I used to be a barista. Now I microwave pretzels for ${user}.”`,
-  (user, issue) => `Flight Attendant to ${user}: “OMG I'm so sorry! Here’s a new snack. Please don’t tell D4rth Distortion.”`,
-  (user, issue) => `Flight Attendant to ${user}: “We call that ‘airline flavor’. It’s rustic.”`,
-  (user, issue) => `Flight Attendant to ${user}: “If you wanted perfection, you should’ve flown private.”`,
-  (user, issue) => `Flight Attendant to ${user}: “I’ll fix it, but I’m writing a poem about this trauma later.”`,
-  (user, issue) => `Flight Attendant to ${user}: “I don’t get paid enough to care. Take it up with the clouds.”`,
-  (user, issue) => `Flight Attendant to ${user}: “I substituted your ${issue || "snack"} with vibes. Hope that’s okay.”`,
-];
-
-// ---------------- Flight Complaint Endpoint ----------------
-app.get("/flightcomplaint", async (req, res) => {
-  const bare = req.query.bare === "1";
-  const user = (req.query.user || "").toString();
-  const issue = (req.query.issue || "").toString().slice(0, 120);
-  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
-
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
-    return res.status(401).type("text/plain").send("unauthorized");
-
-  await sleep(delayMs);
-  const full = sample(FLIGHT_COMPLAINTS)(user || "passenger", issue);
-  if (bare) return res.type("text/plain").send(full.replace(/^Flight Attendant to .*?:\s*/, ""));
-  return res.type("text/plain").send(full);
-});
-
 
 const STORM_OFF = [
   (user) => `The bartender glares at ${user}, rips off the apron, and storms out screaming “Y’all don’t deserve me!”`,
@@ -826,118 +794,7 @@ const CHEERS = [
   (user) => `Bartender to ${user}: “Gee wilikers pal thank you very much! That was a splendifurous thing to say! Neato dude!”`,
 ];
 
-// ---------------- Flight Attendant Firepack ----------------
-const FLIGHT_STORM_OFF = [
-  (user) => `The flight attendant was mid-rant about ${user} asking for extra peanuts when D4rth Distortion grabbed them and yeeted them out the emergency exit.`,
-  (user) => `Just as the flight attendant finished flipping off row 12 and calling ${user} “a snackless gremlin,” D4rth Distortion stormed in and launched them out the hatch.`,
-  (user) => `The attendant was trying to unionize the snack cart when D4rth Distortion burst from the cockpit and sent them flying into the stratosphere.`,
-  (user) => `They were composing a breakup haiku about ${user} on a napkin when D4rth Distortion snatched them and yeeted them into the clouds.`,
-  (user) => `Right after they spilled cranberry juice on ${user} and said “Oops, turbulence,” D4rth Distortion came in hot and ejected them like a soda can.`,
-  (user) => `They were halfway through a TikTok dance in the aisle when D4rth Distortion tackled them and yeeted them into orbit.`,
-  (user) => `The attendant was trying to charge ${user} $50 for a warm Sprite when D4rth Distortion kicked open the hatch and sent them skydiving without a parachute.`,
-  (user) => `They were whispering “I hate this airline” into the intercom when D4rth Distortion grabbed them by the collar and launched them into the jet stream.`,
-  (user) => `They were about to serve ${user} a single pretzel and call it “gourmet” when D4rth Distortion intervened with a heroic yeet.`,
-  (user) => `The attendant was arguing with the autopilot about snack distribution when D4rth Distortion emerged and flung them into the clouds like a paper plane.`,
-];
 
-
-const FLIGHT_CHEERS = [
-  (user) => `Flight Attendant to ${user}: “Appreciate you! May your snacks be crunchy and your Wi-Fi never drop.”`,
-  (user) => `Flight Attendant to ${user}: “Cheers, legend. Next snack comes with extra style points.”`,
-  (user) => `Flight Attendant to ${user}: “Verified: you have excellent taste and impeccable vibes.”`,
-  (user) => `Flight Attendant to ${user}: “Gratitude noted. Hydration and happiness incoming.”`,
-  (user) => `Flight Attendant to ${user}: “Thanks fam. Snack cart smiles upon you.”`,
-  (user) => `Flight Attendant to ${user}: “Can you tell D4rth Distortion I got a good review?”`,
-  (user) => `Flight Attendant to ${user}: “Gee wilikers pal thank you very much! That was a splendiferous thing to say! Neato dude!”`,
-];
-
-// ---------------- State Counter ----------------
-let flightFiredCount = 0;
-
-// ---------------- Flight Firepack Endpoint ----------------
-app.get("/flightfirepack", async (req, res) => {
-  const user = (req.query.user || "").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
-
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
-    return res.status(401).type("text/plain").send("unauthorized");
-
-  await sleep(delayMs);
-  const storm = sample(FLIGHT_STORM_OFF)(user || "the Realm");
-  flightFiredCount += 1;
-  const hire = `A new flight attendant, ${randomBartenderName()}, has now taken over the Distorted Realm airline to better serve the skies. (Fired so far: ${flightFiredCount})`;
-  return res.type("text/plain").send(`${storm} ${hire}`);
-});
-
-const randomFlightAttendantName = () =>
-  `${sample(BARTENDER_FIRST)} ${sample(BARTENDER_LAST)}`;
-
-app.get("/flightfirepack", async (req, res) => {
-  const user = (req.query.user || "").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "5000", 10) || 5000, 8000);
-
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
-    return res.status(401).type("text/plain").send("unauthorized");
-
-  await sleep(delayMs);
-  const storm = sample(FLIGHT_STORM_OFF)(user || "the Realm");
-  flightFiredCount += 1;
-
-  // Send initial fire message
-  res.type("text/plain").send(storm);
-
-  // After 5 seconds, announce new hire
-  setTimeout(() => {
-    const newHire = randomFlightAttendantName();
-    const msg = `A new flight attendant, ${newHire}, has teleported onto the plane to better serve the skies. (Fired so far: ${flightFiredCount})`;
-    // You can log this, send to overlay, or trigger Nightbot externally
-    console.log("[Nightbot follow-up]", msg);
-    // Optional: expose via a shared queue or webhook if needed
-  }, 5000);
-});
-
-// Serve /public if not already handled
-app.use(express.static("public"));
-
-// In-memory trigger flag for the overlay
-let FOOD_TRIGGER_TS = 0;
-
-// POST /trigger/food-command   -> flip the trigger flag
-app.post("/trigger/food-command", express.json(), (req, res) => {
-  FOOD_TRIGGER_TS = Date.now();
-  res.json({ ok: true, at: FOOD_TRIGGER_TS });
-});
-
-// GET /api/food-command/next   -> overlay polls this; one-shot trigger
-app.get("/api/food-command/next", (req, res) => {
-  if (FOOD_TRIGGER_TS) {
-    const at = FOOD_TRIGGER_TS;
-    FOOD_TRIGGER_TS = 0;
-    return res.json({ trigger: true, at });
-  }
-  res.json({ trigger: false });
-});
-
-// GET /food-command  -> serves the overlay page
-app.get("/food-command", (req, res) => {
-  const filePath = path.join(process.cwd(), "public", "food-command", "index.html");
-  res.sendFile(filePath);
-});
-
-// ---------------- Flight Cheers Endpoint ----------------
-app.get("/flightcheers", async (req, res) => {
-  const bare = req.query.bare === "1";
-  const user = (req.query.user || "").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "1500", 10) || 1500, 5000);
-
-  if (process.env.SHARED_KEY && req.query.key !== process.env.SHARED_KEY)
-    return res.status(401).type("text/plain").send("unauthorized");
-
-  await sleep(delayMs);
-  const full = sample(FLIGHT_CHEERS)(user || "passenger");
-  if (bare) return res.type("text/plain").send(full.replace(/^Flight Attendant to .*?:\s*/, ""));
-  return res.type("text/plain").send(full);
-});
 
 
 // ---------------- State counters ----------------
@@ -1828,130 +1685,6 @@ app.get("/debug/award", async (req, res) => {
   const result = await seAddPoints(user, amount);
   return res.type("text/plain").send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
 });
-
-// ---------------- Flight Snack Command Pools ----------------
-const FLIGHT_SNACKS = {
-  coach: {
-    snacks: [
-      "pretzels", "salted peanuts", "mini cookies", "trail mix", "granola bar",
-      "cheese crackers", "popcorn", "fruit snacks", "rice cakes", "potato chips"
-    ],
-    drinks: [
-      "water", "cola", "ginger ale", "lemonade", "iced tea",
-      "apple juice", "orange juice", "Sprite", "root beer", "cranberry juice"
-    ]
-  },
-  business: {
-    snacks: [
-      "hummus with pita chips", "cheese cubes", "mixed nuts", "chocolate truffles", "mini croissants",
-      "dried mango slices", "Greek yogurt", "veggie sticks with ranch", "mini muffins", "smoked almonds"
-    ],
-    drinks: [
-      "sparkling water", "cold brew coffee", "craft soda", "green tea", "coconut water",
-      "Arnold Palmer", "cherry limeade", "kombucha", "espresso shot", "blackberry lemonade"
-    ]
-  },
-  firstclass: {
-    snacks: [
-      "prosciutto-wrapped melon", "Brie with fig jam", "truffle popcorn", "ahi tuna bites", "mini charcuterie board",
-      "Caprese skewers", "lobster sliders", "caviar on blinis", "macarons", "chocolate-dipped strawberries"
-    ],
-    drinks: [
-      "champagne", "Pinot Noir", "matcha latte", "elderflower tonic", "craft cocktail (virgin)",
-      "mango lassi", "hibiscus tea", "sparkling rosé", "cold-pressed juice", "saffron-infused lemonade"
-    ]
-  }
-};
-
-// ---------------- Flight Attendant Quips ----------------
-const FLIGHT_ATTENDANT_QUIPS = [
-  (user) => `“You're lucky I'm still sober, ${user}.”`,
-  (user) => `“Enjoy your snack, ${user}. I microwaved it myself.”`,
-  (user) => `“This is the best we could do at 30,000 feet, ${user}.”`,
-  (user) => `“Don’t ask for seconds, ${user}. I’m not your personal chef.”`,
-  (user) => `“Smile and chew, ${user}. That’s all we ask.”`,
-  (user) => `“If you need anything else, press the button and pray.”`,
-  (user) => `“You’re my favorite passenger today, ${user}. Don’t tell the others.”`,
-  (user) => `“I spit in the champagne, ${user}. Just kidding. Or am I?”`,
-  (user) => `“This snack pairs well with turbulence, ${user}.”`,
-  (user) => `“You’re welcome, ${user}. I deserve a raise.”`,
-  (user) => `“I used to dream of Broadway. Now I serve pretzels to ${user}.”`,
-  (user) => `“You again, ${user}? Fine. Here’s your snack.”`,
-  (user) => `“I’m not mad, ${user}. Just disappointed.”`,
-  (user) => `“This snack is more gourmet than your outfit, ${user}.”`,
-  (user) => `“I gave you the good stuff, ${user}. Don’t tell coach.”`
-];
-
-// ---------------- Helper: Build Snack Response ----------------
-const getFlightSnackCombo = (tier, user) => {
-  const pool = FLIGHT_SNACKS[tier];
-  if (!pool) return `${user} requested a snack, but the galley is empty.`;
-
-  const snack = pool.snacks[Math.floor(Math.random() * pool.snacks.length)];
-  const drink = pool.drinks[Math.floor(Math.random() * pool.drinks.length)];
-  const quip = FLIGHT_ATTENDANT_QUIPS[Math.floor(Math.random() * FLIGHT_ATTENDANT_QUIPS.length)](user);
-
-  return `Here is your food, ${user}: ${snack} and ${drink}. ${quip}`;
-};
-
-// ---------------- Flight Snack Endpoints ----------------
-app.get("/flight/coachsnacks", async (req, res) => {
-  const user = (req.query.user || "Guest").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
-  await sleep(delayMs);
-  const msg = getFlightSnackCombo("coach", user);
-  res.type("text/plain").send(msg);
-});
-
-app.get("/flight/business", async (req, res) => {
-  const user = (req.query.user || "Guest").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
-  await sleep(delayMs);
-  const msg = getFlightSnackCombo("business", user);
-  res.type("text/plain").send(msg);
-});
-
-app.get("/flight/firstclass", async (req, res) => {
-  const user = (req.query.user || "Guest").toString();
-  const delayMs = Math.min(parseInt(req.query.delayMs || "2000", 10) || 2000, 5000);
-  await sleep(delayMs);
-  const msg = getFlightSnackCombo("firstclass", user);
-  res.type("text/plain").send(msg);
-});
-
-// 🔊 Send message to StreamElements chat
-const sendChatMessage = async (message) => {
-  try {
-    await axios.post('https://api.streamelements.com/kappa/v2/bot/message', {
-      channel: 'd4rth_distortion', // Replace with your Twitch channel name
-      message: message
-    }, {
-      headers: {
-        Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJjaXRhZGVsIiwiZXhwIjoxNzcyOTkyMDE0LCJqdGkiOiJmZDg3NjNhYS03NzljLTQzMjAtOTE5MS0wMTAwNmM4M2VhNTkiLCJjaGFubmVsIjoiNjhiYzI2ZWM2MjU0OWUwZTU0YTRjNzFmIiwicm9sZSI6Im93bmVyIiwiYXV0aFRva2VuIjoiWXRzbmpPa2VNak03WjJvX2llVTVUd0xQQmNqS3FtVkhtTkt3N0lPV2FlY0I3OTlnIiwidXNlciI6IjY4YmMyNmVjNjI1NDllMGU1NGE0YzcxZSIsInVzZXJfaWQiOiIyN2Y3NDkzYS1jMWMxLTRkODctYmFmYy05YjM1ZTQwMjBhMTQiLCJ1c2VyX3JvbGUiOiJjcmVhdG9yIiwicHJvdmlkZXIiOiJ0d2l0Y2giLCJwcm92aWRlcl9pZCI6IjEzNjM0MDg1NzEiLCJjaGFubmVsX2lkIjoiMzkyZTJlOWMtN2EyNC00ZDIzLWE5MWYtYjEwNWJhMGYyYTJmIiwiY3JlYXRvcl9pZCI6ImExODI5YzdmLTZjOWQtNDcyMi1hN2U3LWUxMWI5OTA4YTAxNiJ9.7qRNHBvVqFC-EvXazbKD4gYmWBjBc9nlfkwbT363Auk` // Replace with your StreamElements JWT token
-      }
-    });
-  } catch (err) {
-    console.error('Error sending chat message:', err.message);
-  }
-};
-
-app.get('/diagnosis', async (req, res) => {
-  const { user, key } = req.query;
-  if (key !== 'd4rth-distortion') return res.status(403).send('Forbidden');
-
-  const displayName = user || 'Guest';
-
-  // Respond immediately to StreamElements
-  res.type("text/plain").send(`${displayName} asked D4rth Distortion to run a deep diagnosis on them.`);
-
-  // Nightbot will handle the follow-up message 6 seconds later
-});
-
-
-
-
-
-
 
 // ===================== GRASS ENTREPRENEUR =====================
 
