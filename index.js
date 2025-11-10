@@ -531,16 +531,16 @@ let FORCE_LAST_FINISHED_AT = 0;
 // Questions (ASCII-safe)
 const FORCE_QUESTIONS = [
   {
-    q: "Q1 — Choose your path: 1) Peace  2) Power",
-    w: [ { jedi: 2 }, { sith: 2 } ]
+    q: "Q1 — Choose your path: 1) Peace  2) Power  3) Balance",
+    w: [ { jedi: 2 }, { sith: 2 }, { gray: 2 } ]
   },
   {
-    q: "Q2 — What matters more: 1) Order  2) Freedom",
-    w: [ { jedi: 1 }, { gray: 1 } ]
+    q: "Q2 — What matters more: 1) Order  2) Freedom  3) Chaos",
+    w: [ { jedi: 1 }, { gray: 1 }, { sith: 1 } ]
   },
   {
-    q: "Q3 — Guide your heart: 1) Serenity  2) Passion",
-    w: [ { jedi: 2 }, { sith: 2 } ]
+    q: "Q3 — Guide your heart: 1) Serenity  2) Passion  3) The Force",
+    w: [ { jedi: 2 }, { sith: 2 }, { grey: 2 } ]
   }
 ];
 
