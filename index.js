@@ -699,6 +699,47 @@ function getTodaysSpecial() {
   return { date: key, drink: DRINK_KEYS[idx] };
 }
 
+// --- Migration wiring: register extracted route modules ---
+// Place this after you create the files in lib/, services/, and routes/.
+// Recommended location: after you create globals (DRINK_KEYS / SPECIAL_SALT / DAILY_BONUS)
+// and before the existing in-file quip data or before route handlers are defined.
+
+import { registerAllRoutes } from "./routes/index.js";
+import * as helpers from "./lib/helpers.js";
+import * as quips from "./lib/quips.js";
+import * as seService from "./services/streamelements.js";
+import { makeEloService } from "./services/elo.js";
+
+// Build small services object that mirrors what the new route modules expect
+const eloSvc = makeEloService(redis);
+const services = {
+  seAddPoints: seService.seAddPoints,
+  seGetPoints: seService.seGetPoints,
+  balanceSuffix: seService.balanceSuffix,
+  awardAndLogLater: seService.awardAndLogLater,
+  // keep existing globals you still expect in services
+  GIFT_QUIPS,
+  THANKS,
+  elo: eloSvc,
+};
+
+// Shared globals used by the route modules
+const globals = {
+  BARTENDER_FIRST,
+  BARTENDER_LAST,
+  DRINK_KEYS,      // ensure DRINK_KEYS is defined before this snippet
+  SPECIAL_SALT,    // ensure SPECIAL_SALT is defined before this snippet
+};
+
+// Small config bag for constants expected by routes
+const config = {
+  DAILY_BONUS: typeof DAILY_BONUS !== "undefined" ? DAILY_BONUS : 1000,
+  // add other small constants if needed
+};
+
+// Register the extracted route modules (idempotent - safe to call once)
+registerAllRoutes(app, { redis, helpers, quips, services, globals, config });
+
 // ---------------- Quip pools (bar) ----------------
 const LINES = [
   "Careful, that one's potent.",
