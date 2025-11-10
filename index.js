@@ -99,6 +99,9 @@ const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
 const app = express();
 app.use(express.json());
 app.use(express.static("public")); // if you serve /public
+app.use("/factions", factionsRouter);
+// If you do this, update any Wizebot/overlay URLs accordingly.
+
 
 // --- Discord client ---
 const client = new Client({
@@ -160,6 +163,8 @@ client.on("messageCreate", async (msg) => {
   // Trials + Forge
   await run(onTrialMsg,      "trial");
   await run(onForgeMsg,      "forge");
+  await run(onEloMsg,          "elo");
+
 });
 
 client.on("interactionCreate", async (ix) => {
