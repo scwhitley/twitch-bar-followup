@@ -163,8 +163,6 @@ client.on("messageCreate", async (msg) => {
   // Trials + Forge
   await run(onTrialMsg,      "trial");
   await run(onForgeMsg,      "forge");
-  await run(onEloMsg,          "elo");
-
 });
 
 client.on("interactionCreate", async (ix) => {
