@@ -28,6 +28,10 @@ export function oppSide(side) {
   return null; // gray has no “opposite” for these rules
 }
 
+export const eloDailyNs = "elo:daily";
+export const eloDailyBonusKey = (user) => `${eloDailyNs}:bonus:${String(user).toLowerCase()}`;
+
+
 // ---- Redis key builders (namespaced & consistent) ----
 // Convert flows
 export const convertCooldownKey = (caster) =>
@@ -70,3 +74,4 @@ export const invasionLockKey = () => `invasion:lock:daily`;
 // Duels
 export const duelLastKey = (user) =>
   `duel:last:${String(user).toLowerCase()}`;
+
