@@ -2,6 +2,10 @@
 import { Redis } from "@upstash/redis";
 const redis = Redis.fromEnv();
 
+import { eloDailyBonusKey } from "../core/faction-utils.js";
+import { ELO_BONUS_DAILY_CAP, ELO_BONUS_PER_USE } from "../core/faction-constants.js";
+
+
 // ----- Basic ELO helpers -----
 const eloKey = (user) => `elo:${String(user).toLowerCase()}`;
 
@@ -28,6 +32,24 @@ export async function addElo(user, delta) {
   const cur = await ensureElo(user);
   return setElo(user, cur + Number(delta || 0));
 }
+
+
+// Grant a small daily ELO bonus when actions like meditate/seethe are used.
+// Capped per user per day by ELO_BONUS_DAILY_CAP.
+export async function applyEloDailyBonus(user) {
+  const key = eloDailyBonusKey(user);
+  const used = Number((await redis.get(key)) || 0);
+  if (used >= ELO_BONUS_DAILY_CAP) return null;
+
+  const newUsed = used + 1;
+  await redis.set(key, newUsed);
+
+  const cur = await getElo(user);       // uses your existing getter
+  await setElo(user, cur + ELO_BONUS_PER_USE);
+
+  return newUsed; // return how many times they've claimed today (optional)
+}
+
 
 // ----- Conversion math -----
 // Returns a probability 0..1 that a convert attempt succeeds.
@@ -81,3 +103,4 @@ export function rollSuccess(prob) {
 
 // (named export in case other modules need the redis key)
 export { eloKey };
+
