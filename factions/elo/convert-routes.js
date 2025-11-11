@@ -20,7 +20,7 @@ import {
 import {
   CONVERT_COOLDOWN_SEC,
   CONVERT_DAILY_LIMIT,
-  IMMUNITY_HOURS,
+  IMMUNITY_SECONDS,
   D4RTH_USERNAME,
   ELO_LOSS_VS_D4RTH,
 } from "../core/faction-constants.js";
@@ -206,3 +206,4 @@ export function registerConvertRoutes(app) {
     return res.type("text/plain").send(`@${caster} sways @${target} toward the ${niceSideLabel(side)}. (${Math.round(p*100)}% chance)`);
   });
 }
+
