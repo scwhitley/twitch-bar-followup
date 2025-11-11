@@ -100,7 +100,7 @@ router.get("/convert/cleanse", async (req, res) => {
 // ---------- /convert/corrupt (to Sith) ----------
 router.get("/convert/corrupt", async (req, res) => {
   const caster = sanitizeOneLine(req.query.caster || "").replace(/^@+/, "").toLowerCase();
-  const target = sanitizeOneLine(req.query.target || "").replace/^@+/, "").toLowerCase();
+  const target = sanitizeOneLine(req.query.target || "").replace(/^@+/, "").toLowerCase();
   if (!caster || !target) {
     return res.type("text/plain").send("Usage: /convert/corrupt?caster=NAME&target=NAME");
   }
@@ -214,3 +214,4 @@ router.get("/convert/sway", async (req, res) => {
 });
 
 export default router;
+
