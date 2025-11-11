@@ -22,6 +22,14 @@ import { forceTrialRouter }   from "./trial/force-trial-routes.js";
 export { onMessageCreate as onEloMsg } from "./elo/elo-commands.js";
 // If you later add message handlers under actions/trial, re-export similarly.
 
+export const factionsRouter = express.Router();
+factionsRouter.use(convertRouter);
+// ... mount other routers
+
+export function registerFactionRoutes(app) {
+  app.use(factionsRouter);
+}
+
 // ---- Build aggregated router ----
 const router = express.Router();
 
