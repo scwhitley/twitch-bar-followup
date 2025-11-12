@@ -49,8 +49,6 @@ const FORCE_RESULT_LINES = {
     "Verdict: GRAY — flexible, dangerous, interesting."
   ]
 }
-];
-
 // --- Helpers
 function forceCleanupIfExpired() {
   if (!FORCE_ACTIVE) return;
@@ -190,4 +188,5 @@ router.get("/force/factions", async (_req, res) => {
 
 export const forceTrialRouter = router;
 export default router;
+
 
