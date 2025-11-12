@@ -46,5 +46,3 @@ router.use(duelRouter);
 
 router.use(forceTrialRouter);
 
-// Single export the app will mount
-export const factionsRouter = router;
