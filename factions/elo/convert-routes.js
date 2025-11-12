@@ -16,12 +16,11 @@ import {
   getAlignment,
   setUserAlignmentRedis,
   addFactionPoints,
-  ensureElo,
-  getElo,
-  setElo,
 } from "../core/alignment-core.js";
 
 import {
+  getElo,
+  setElo,
   calcConvertChance,
   rollSuccess,
 } from "./elo-core.js";
@@ -29,7 +28,7 @@ import {
 import {
   CONVERT_COOLDOWN_SEC,
   CONVERT_DAILY_LIMIT,
-  IMMUNITY_SECONDS,      // ✅ seconds, not hours
+  IMMUNITY_SECONDS, // 20-minute immunity window, from constants
   D4RTH_USERNAME,
 } from "../core/faction-constants.js";
 
@@ -86,7 +85,7 @@ router.get("/convert/cleanse", async (req, res) => {
   }
 
   await setUserAlignmentRedis(target, "jedi");
-  await redis.set(immKey, 1, { ex: IMMUNITY_SECONDS });      // ✅ 20 min window from constants
+  await redis.set(immKey, 1, { ex: IMMUNITY_SECONDS });
   await redis.incr(`war:season:jedi`);
 
   return res.type("text/plain").send(`@${caster} bends fate — @${target} joins the Jedi. (${Math.round(p*100)}% chance)`);
@@ -142,18 +141,18 @@ router.get("/convert/corrupt", async (req, res) => {
   }
 
   await setUserAlignmentRedis(target, "sith");
-  await redis.set(immKey, 1, { ex: IMMUNITY_SECONDS });      // ✅
+  await redis.set(immKey, 1, { ex: IMMUNITY_SECONDS });
   await redis.incr(`war:season:sith`);
 
   return res.type("text/plain").send(`@${caster} corrupts @${target}. Welcome to the Sith. (${Math.round(p*100)}% chance)`);
 });
 
-// ---------- /convert/sway (Gray helps one side) ----------
+// ---------- /convert/sway (Gray assists one side) ----------
 router.get("/convert/sway", async (req, res) => {
   const caster = sanitizeOneLine(req.query.caster || "").replace(/^@+/, "").toLowerCase();
   const target = sanitizeOneLine(req.query.target || "").replace(/^@+/, "").toLowerCase();
   const side   = String(req.query.side || "").toLowerCase();
-  if (!caster || !target || !["jedi","sith"].includes(side)) {
+  if (!caster || !target || !["jedi", "sith"].includes(side)) {
     return res.type("text/plain").send("Usage: /convert/sway?caster=NAME&target=NAME&side=jedi|sith");
   }
 
@@ -199,10 +198,10 @@ router.get("/convert/sway", async (req, res) => {
   }
 
   await setUserAlignmentRedis(target, side);
-  await redis.set(immKey, 1, { ex: IMMUNITY_SECONDS });      // ✅
+  await redis.set(immKey, 1, { ex: IMMUNITY_SECONDS });
   await redis.incr(`war:season:${side}`);
 
   return res.type("text/plain").send(`@${caster} sways @${target} toward the ${niceSideLabel(side)}. (${Math.round(p*100)}% chance)`);
 });
 
-export const convertRouter = router;   // ✅ named export expected by /factions/index.js
+export const convertRouter = router;
