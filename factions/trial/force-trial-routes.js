@@ -48,6 +48,7 @@ const FORCE_RESULT_LINES = {
     "Verdict: GRAY — you choose the moment, not the mantra.",
     "Verdict: GRAY — flexible, dangerous, interesting."
   ]
+}
 ];
 
 // --- Helpers
@@ -189,3 +190,4 @@ router.get("/force/factions", async (_req, res) => {
 
 export const forceTrialRouter = router;
 export default router;
+
