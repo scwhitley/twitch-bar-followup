@@ -68,6 +68,8 @@ import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from 
 // --- Faction Folder Imports ---
 import { factionsRouter } from "./factions/index.js";
 
+//
+
 // ---------- Redis / misc ----------
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
@@ -1035,9 +1037,12 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
 });
 
 
-await reloadTrialData();
-const ts = getTrialStatus();
-console.log("[TRIAL LOADER]", ts);
+try {
+  await reloadTrialData();
+  console.log("[TRIAL] questions loaded at boot");
+} catch (err) {
+  console.warn("[TRIAL] failed to load questions at boot:", err?.message || err);
+}
 
 
 // ---------------- Start server ----------------
