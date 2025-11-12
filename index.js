@@ -417,8 +417,6 @@ const config = {
   // add other small constants if needed
 };
 
-// Register the extracted route modules (idempotent - safe to call once)
-registerAllRoutes(app, { redis, helpers, quips, services, globals, config });
 
 // ---------------- Quip pools (bar) ----------------
 const LINES = [
