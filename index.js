@@ -66,7 +66,7 @@ import { onMessageCreate as onDiceMsg } from "./economy/dice-commands.js";
 import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trials/trial-command.js";
 
 // --- Faction Folder Imports ---
-import { registerFactionRoutes } from "./factions/index.js";
+import { factionsRouter } from "./factions/index.js";
 
 // ---------- Redis / misc ----------
 export const redis = new Redis({
@@ -101,7 +101,7 @@ app.use(express.json());
 app.use(express.static("public")); // if you serve /public
 app.use("/factions", factionsRouter);
 // If you do this, update any Wizebot/overlay URLs accordingly.
-registerFactionRoutes(app);
+app.use(factionsRouter);
 
 
 // --- Discord client ---
