@@ -1,40 +1,27 @@
-// factions/index.js
+// /factions/index.js
 import express from "express";
 
-// ---- Routers (HTTP endpoints) ----
-// ELO + conversion
-import { eloRouter }          from "./elo/elo-commands.js";
-import { convertRouter }      from "./elo/convert-routes.js";
-
-// Action routes
-import { rallyRouter }        from "./actions/rally-route.js";
-import { meditateRouter }     from "./actions/meditate-route.js";
-import { seetheRouter }       from "./actions/seethe-route.js";
-import { eventRouter }        from "./actions/event-route.js";
-import { invasionRouter }     from "./actions/invasion-routes.js";
-import { duelRouter }         from "./actions/duel-route.js";
-
-// Force trial routes
-import { forceTrialRouter }   from "./trial/force-trial-routes.js";
-
-// ---- Optional: message-based handlers (chat commands) ----
-// If your elo-commands.js exports a Discord handler for "!elo" etc., re-export it:
+// ---- Discord chat handlers you expose from factions (optional) ----
 export { onMessageCreate as onEloMsg } from "./elo/elo-commands.js";
-// If you later add message handlers under actions/trial, re-export similarly.
 
-export const factionsRouter = express.Router();
-factionsRouter.use(convertRouter);
-// ... mount other routers
+// ---- Routers (HTTP endpoints) ----
+import { eloRouter }        from "./elo/elo-commands.js";        // if this file defines HTTP endpoints
+import { convertRouter }    from "./elo/convert-routes.js";
 
-export function registerFactionRoutes(app) {
-  app.use(factionsRouter);
-}
+import { rallyRouter }      from "./actions/rally-route.js";
+import { meditateRouter }   from "./actions/meditate-route.js";
+import { seetheRouter }     from "./actions/seethe-route.js";
+import { eventRouter }      from "./actions/event-route.js";
+import { invasionRouter }   from "./actions/invasion-routes.js";
+import { duelRouter }       from "./actions/duel-route.js";
 
-// ---- Build aggregated router ----
+import { forceTrialRouter } from "./trial/force-trial-routes.js";
+
+// ---- Build one combined router and export it ----
 const router = express.Router();
 
-// Mount sub-routers. Order is not critical unless paths overlap.
-router.use(eloRouter);
+// Mount sub-routers. Order only matters if paths overlap.
+router.use(eloRouter);        // if present
 router.use(convertRouter);
 
 router.use(rallyRouter);
@@ -46,3 +33,4 @@ router.use(duelRouter);
 
 router.use(forceTrialRouter);
 
+export { router as factionsRouter };
