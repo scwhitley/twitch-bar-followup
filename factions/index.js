@@ -22,6 +22,9 @@ export { onMessageCreate as onEloMsg } from "./elo/elo-commands.js";
 // ---- Aggregate router ----
 export const factionsRouter = express.Router();
 
+// Router 
+const router = express.Router();
+
 // Mount sub-routers (order only matters if paths overlap)
 factionsRouter.use(convertRouter);
 
