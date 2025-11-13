@@ -2,7 +2,9 @@
 import { EmbedBuilder } from "discord.js";
 import { Redis } from "@upstash/redis";
 
-const redis = Redis.fromEnv();
+const redis = Redis.fromEnv(); 
+// --- Hall of Forge auto-post helper ---
+const HALL_CH_ID = process.env.HALL_OF_FORGE_CHANNEL_ID || "";
 
 // Keys
 const RKEY = (uid) => `trial:result:${uid}`;   // from !trial
@@ -162,19 +164,38 @@ export async function onMessageCreate(msg) {
   }
 
   if (cmd === "!forge") {
-    const r = await redis.get(RKEY(msg.author.id));
-    if (!r) {
-      return void msg.reply("Finish the Trial first. Run **!trial**.");
-    }
-    const result = typeof r === "string" ? JSON.parse(r) : r;
+  // must have finished trial
+  const r = await redis.get(RKEY(msg.author.id));
+  if (!r) return void msg.reply("Finish the Trial first. Run **!trial**.");
 
-    const build = buildSaberForAlignment(result.alignment);
-    await redis.set(FKEY(msg.author.id), JSON.stringify(build));
-    await applyAlignmentRole(msg.member, result.alignment);
-
+  // 🔒 already forged? don't let them reroll
+  const existing = await redis.get(FKEY(msg.author.id));
+  if (existing) {
+    const build = typeof existing === "string" ? JSON.parse(existing) : existing;
     const e = forgeEmbed(build, msg.author);
-    return void msg.channel.send({ embeds: [e] });
+    return void msg.reply({
+      content: "Your saber is already forged and cannot be reforged.",
+      embeds: [e]
+    });
   }
+
+  const result = typeof r === "string" ? JSON.parse(r) : r;
+
+  // create build, save, apply roles
+  const build = buildSaberForAlignment(result.alignment);
+  await redis.set(FKEY(msg.author.id), JSON.stringify(build));
+  await applyAlignmentRole(msg.member, result.alignment);
+
+  // show to the channel
+  const e = forgeEmbed(build, msg.author);
+  await msg.channel.send({ embeds: [e] });
+
+  // 📌 auto-post to Hall of Forge
+  await postForgeToHall(msg.client, build, msg.author);
+
+  return;
+}
+
 
   if (cmd === "!forgecard") {
     const raw = await redis.get(FKEY(msg.author.id));
@@ -205,8 +226,23 @@ export async function onMessageCreate(msg) {
     }
   }
 
+async function postForgeToHall(client, build, user) {
+  if (!HALL_CH_ID) return; // no-op if not configured
+  try {
+    const ch = client.channels.cache.get(HALL_CH_ID) || await client.channels.fetch(HALL_CH_ID);
+    if (!ch) return;
+
+    const e = forgeEmbed(build, user);
+    await ch.send({ content: `🧰 **${user.username}** forged a saber:`, embeds: [e] });
+  } catch (err) {
+    console.error("[HallOfForge] post error:", err);
+  }
+}
+  
   if (cmd === "!forgereset") {
     await redis.del(FKEY(msg.author.id));
     return void msg.reply("Your saved forge build has been cleared.");
   }
 }
+
+
