@@ -12,6 +12,7 @@ import { seetheRouter }     from "./actions/seethe-route.js";
 import { eventRouter }      from "./actions/event-route.js";
 import { invasionRouter }   from "./actions/invasion-routes.js";
 import { duelRouter }       from "./actions/duel-route.js";
+import { eloRouter }        from "./elo/elo-http.js";
 
 import { forceTrialRouter } from "./trial/force-trial-routes.js";
 
@@ -26,7 +27,7 @@ factionsRouter.use(convertRouter);
 
 // If/when you have an eloRouter HTTP router, uncomment the line below
 // factionsRouter.use(eloRouter);
-
+router.use(eloRouter);  
 factionsRouter.use(rallyRouter);
 factionsRouter.use(meditateRouter);
 factionsRouter.use(seetheRouter);
