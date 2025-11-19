@@ -991,6 +991,31 @@ app.get("/grass/reset", (req, res) => {
   res.type("text/plain").send("Cleared all stashes.");
 });
 
+
+// Marvel Rivals tracker state
+let marvelProgress = {
+  goal: 1200,
+  current: 120   // ⬅ start at 120 instead of 0
+};
+
+// Route for overlay to read the current progress
+app.get("/marvel", (req, res) => {
+  res.json(marvelProgress);
+});
+
+// Route for commands to add progress
+app.get("/marvel/add/:num", (req, res) => {
+  const amount = parseInt(req.params.num, 10) || 0;
+  marvelProgress.current += amount;
+
+  if (marvelProgress.current > marvelProgress.goal) {
+    marvelProgress.current = marvelProgress.goal;
+  }
+
+  res.json(marvelProgress);
+});
+
+
 // ---------------- Twitch EventSub (webhook) ----------------
 app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (req, res) => {
   const msgId = req.header("twitch-eventsub-message-id");
