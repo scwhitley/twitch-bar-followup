@@ -1015,6 +1015,16 @@ app.get("/marvel/add/:num", (req, res) => {
   res.json(marvelProgress);
 });
 
+app.get("/marvel/text", (req, res) => {
+  const { current, goal } = marvelProgress;
+  const percent = Math.floor((current / goal) * 100);
+
+  res
+    .type("text/plain")
+    .send(`Scarlet Witch Centurion grind: ${current}/${goal} points (${percent}% complete).`);
+});
+
+
 
 // ---------------- Twitch EventSub (webhook) ----------------
 app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (req, res) => {
