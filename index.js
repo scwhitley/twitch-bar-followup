@@ -991,19 +991,16 @@ app.get("/grass/reset", (req, res) => {
   res.type("text/plain").send("Cleared all stashes.");
 });
 
-
-// Marvel Rivals tracker state
-let marvelProgress = {
+// Marvel stuff
+/let marvelProgress = {
   goal: 1200,
-  current: 120   // ⬅ start at 120 instead of 0
+  current: 120
 };
 
-// Route for overlay to read the current progress
 app.get("/marvel", (req, res) => {
   res.json(marvelProgress);
 });
 
-// Route for commands to add progress
 app.get("/marvel/add/:num", (req, res) => {
   const amount = parseInt(req.params.num, 10) || 0;
   marvelProgress.current += amount;
@@ -1012,17 +1009,22 @@ app.get("/marvel/add/:num", (req, res) => {
     marvelProgress.current = marvelProgress.goal;
   }
 
-  res.json(marvelProgress);
+  const { current, goal } = marvelProgress;
+  res
+    .type("text/plain")
+    .send(`Added ${amount} points. New total: ${current}/${goal} toward Centurion.`);
 });
 
 app.get("/marvel/text", (req, res) => {
   const { current, goal } = marvelProgress;
   const percent = Math.floor((current / goal) * 100);
+  const remaining = goal - current;
 
   res
     .type("text/plain")
-    .send(`Scarlet Witch Centurion grind: ${current}/${goal} points (${percent}% complete).`);
+    .send(`Scarlet Witch Centurion grind: ${current}/${goal} (${percent}% done, ${remaining} to go).`);
 });
+
 
 app.get("/marvel-overlay", (req, res) => {
   res.send(`
