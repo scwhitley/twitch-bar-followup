@@ -992,7 +992,7 @@ app.get("/grass/reset", (req, res) => {
 });
 
 // Marvel stuff
-/let marvelProgress = {
+let marvelProgress = {
   goal: 1200,
   current: 120
 };
