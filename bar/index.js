@@ -1,7 +1,6 @@
 // /bar/index.js
-import { registerDrinkRoutes } from "./drink-routes.js";
+// Facade for all drink-related logic
+
+export { onMessageCreate } from "./drink-routes.js";
 
 
-
-
-export { registerDrinkRoutes };
