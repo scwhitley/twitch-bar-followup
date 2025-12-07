@@ -34,8 +34,6 @@ import {
   onSkillsIx,
 } from "./traveler/index.js";
 
-// --------- Send Drink Imports -----------
-import { GIFT_QUIPS, THANKS } from "./bar-quips.js";
 
 // ---------- Forge ----------
 import { onMessageCreate as onForgeMsg } from "./forge-command.js";
