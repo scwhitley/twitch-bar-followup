@@ -3,7 +3,7 @@ import { DRINKS } from "./data/drink-menu.js";
 import { QUIPS } from "./data/drink-quips.js";
 
 // Import your economy helpers (adjust path to match your repo)
-import { getBalance, deductBalance } from "../economy/bank-commands.js";
+import { getBalance, deductBalance } from "./data/bar-economy.js";
 
 // Simple in-memory drink counter
 const drinkCounts = {};
@@ -72,3 +72,4 @@ export async function onMessageCreate(msg) {
 
   return;
 }
+
