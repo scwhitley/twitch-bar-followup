@@ -35,6 +35,10 @@ import {
 } from "./traveler/index.js";
 
 
+// ---------- Bar Core ----------
+import { onMessageCreate as onDrinkMsg } from "./bar/index.js";
+
+
 // ---------- Forge ----------
 import { onMessageCreate as onForgeMsg } from "./forge-command.js";
 
