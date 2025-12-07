@@ -151,6 +151,9 @@ client.on("messageCreate", async (msg) => {
   await run(onPartyMsg,      "party");
   await run(onWorkboardMsg,  "workboard");
 
+  // Drinks
+  await run(onDrinkMsg,      "drink");
+  
   // Economy
   await run(onBarMsg,        "vendor-bar");
   await run(onBankMsg,       "bank");
