@@ -5,6 +5,8 @@ import { QUIPS } from "./data/drink-quips.js";
 // Import your economy helpers (adjust path to match your repo)
 import { getBalance, deductBalance } from "./data/bar-economy.js";
 
+const router = express.Router();
+
 // Simple in-memory drink counter
 const drinkCounts = {};
 function bumpDrinkCount(user) {
@@ -13,6 +15,7 @@ function bumpDrinkCount(user) {
   return drinkCounts[user];
 }
 
+export { router };
 // ------------ Handler -------------
 export async function onMessageCreate(msg) {
   const content = msg.content.toLowerCase().trim();
@@ -72,4 +75,5 @@ export async function onMessageCreate(msg) {
 
   return;
 }
+
 
