@@ -62,10 +62,15 @@ router.get("/drinks/receive", (req, res) => {
 
 // --- /drinks/menu ---
 router.get("/drinks/menu", (req, res) => {
-  let menuLines = Object.values(DRINKS).map(
-    (drink) => `${drink.name} — ${drink.price}`
-  );
-  const menuText = "📜 Drink Menu 📜\n" + menuLines.join("\n");
+  // Filter out shots
+  let menuLines = Object.values(DRINKS)
+    .filter(drink => !drink.name.toLowerCase().includes("shot"))
+    .map(drink => `${drink.name} — ${drink.price} `);
+
+  // Add a single line for shots
+  menuLines.push("Shots — 5");
+
+  const menuText = menuLines.join("\n");
   return res.type("text/plain").send(menuText);
 });
 
@@ -76,5 +81,6 @@ export async function onMessageCreate(msg) {
   // Dispatcher logic for !menu, !senddrink, !receive if you want chat commands too
   return;
 }
+
 
 
