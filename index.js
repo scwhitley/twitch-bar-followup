@@ -36,8 +36,7 @@ import {
 
 
 // ---------- Bar Core ----------
-import { onMessageCreate as onDrinkMsg } from "./bar/index.js";
-
+import { onMessageCreate as onDrinkMsg, registerDrinkRoutes } from "./bar/index.js";
 
 // ---------- Forge ----------
 import { onMessageCreate as onForgeMsg } from "./forge-command.js";
@@ -108,6 +107,7 @@ app.use("/factions", factionsRouter);
 app.locals.redis = redis;
 app.use(factionsRouter);
 
+registerDrinkRoutes(app);
 
 // --- Discord client ---
 const client = new Client({
