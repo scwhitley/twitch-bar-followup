@@ -1,5 +1,3 @@
-// /bar/drink-routes.js
-
 // ------------ Imports -------------
 import express from "express";
 import { DRINKS } from "./data/drink-menu.js";
@@ -18,12 +16,12 @@ router.get("/send", async (req, res) => {
   if (!drink) return res.type("text/plain").send(`Sorry, ${fromUser}, that drink isn’t on the menu.`);
   if (!toUser) return res.type("text/plain").send(`You need to specify who to send the drink to, ${fromUser}.`);
 
-  const balance = getBalance(fromUser);
+  const balance = await getBalance(fromUser); // ✅ use real balance
   if (balance < drink.price) {
     return res.type("text/plain").send(`@${fromUser}, you don’t have enough Distortion Dollars for a ${drink.name}. Balance: ${balance}`);
   }
 
-  const newBalance = deductBalance(fromUser, drink.price);
+  const newBalance = await deductBalance(fromUser, drink.price); // ✅ deduct from real balance
 
   return res.type("text/plain").send(
     `@${fromUser} has sent a ${drink.name} to @${toUser}! They have ${newBalance} Distortion Dollars left. Make sure to thank them for the drink!`
@@ -62,12 +60,10 @@ router.get("/receive", (req, res) => {
 
 // --- /drinks/menu ---
 router.get("/menu", (req, res) => {
-  // Filter out shots
   let menuLines = Object.values(DRINKS)
     .filter(drink => !drink.name.toLowerCase().includes("shot"))
     .map(drink => `${drink.name} — ${drink.price} `);
 
-  // Add a single line for shots
   menuLines.push("Shots — 5");
 
   const menuText = menuLines.join("\n");
@@ -78,10 +74,5 @@ router.get("/menu", (req, res) => {
 export { router };
 
 export async function onMessageCreate(msg) {
-  // Dispatcher logic for !menu, !senddrink, !receive if you want chat commands too
   return;
 }
-
-
-
-
