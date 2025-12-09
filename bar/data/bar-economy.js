@@ -1,16 +1,15 @@
-// /bar/data/bar-economy.js
+import { redis } from "../../index.js"; // adjust path if needed
 
-// Simple in-memory balances for demo.
-// Later you can hook this into your real loyalty points system.
-const balances = {};
-
-export function getBalance(user) {
-  if (!balances[user]) balances[user] = 100; // default starting balance
-  return balances[user];
+export async function getBalance(user) {
+  const key = `balance:${user}`;
+  const balance = await redis.get(key);
+  return balance ? parseInt(balance) : 0;
 }
 
-export function deductBalance(user, amount) {
-  if (!balances[user]) balances[user] = 100;
-  balances[user] = Math.max(0, balances[user] - amount);
-  return balances[user];
+export async function deductBalance(user, amount) {
+  const key = `balance:${user}`;
+  const current = await getBalance(user);
+  const newBalance = Math.max(0, current - amount);
+  await redis.set(key, newBalance);
+  return newBalance;
 }
