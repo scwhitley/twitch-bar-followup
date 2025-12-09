@@ -105,7 +105,6 @@ app.use(express.static("public")); // if you serve /public
 app.use("/factions", factionsRouter);
 // If you do this, update any Wizebot/overlay URLs accordingly.
 app.locals.redis = redis;
-app.use(factionsRouter);
 
 registerDrinkRoutes(app);
 
