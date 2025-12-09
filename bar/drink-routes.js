@@ -9,7 +9,7 @@ import { getBalance, deductBalance } from "./data/bar-economy.js";
 const router = express.Router();
 
 // --- /drinks/send ---
-router.get("/drinks/send", async (req, res) => {
+router.get("/send", async (req, res) => {
   const fromUser = (req.query.from || "").replace("@", "");
   const toUser = (req.query.to || "").replace("@", "");
   const drinkKey = (req.query.drink || "").toLowerCase();
@@ -38,7 +38,7 @@ function bumpDrinkCount(user) {
   return drinkCounts[user];
 }
 
-router.get("/drinks/receive", (req, res) => {
+router.get("/receive", (req, res) => {
   const fromUser = (req.query.from || "").replace("@", "");
   const toUser = (req.query.to || "").replace("@", "");
   const drinkKey = (req.query.drink || "").toLowerCase();
@@ -61,7 +61,7 @@ router.get("/drinks/receive", (req, res) => {
 });
 
 // --- /drinks/menu ---
-router.get("/drinks/menu", (req, res) => {
+router.get("/menu", (req, res) => {
   // Filter out shots
   let menuLines = Object.values(DRINKS)
     .filter(drink => !drink.name.toLowerCase().includes("shot"))
@@ -81,6 +81,7 @@ export async function onMessageCreate(msg) {
   // Dispatcher logic for !menu, !senddrink, !receive if you want chat commands too
   return;
 }
+
 
 
 
