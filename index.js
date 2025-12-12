@@ -12,6 +12,7 @@ import axios from "axios";
 import { fetch as undiciFetch } from "undici";
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { Redis } from "@upstash/redis";
+import { CHANGED_QUIPS } from "./changed-quips.js";
 
 // ------- Shared / Economy core -------
 import { deDupeGuard } from "./economy/econ-core.js";
@@ -386,6 +387,14 @@ async function loveReadUserStream(user, streamId) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sample = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const randomBartenderName = () => `${sample(BARTENDER_FIRST)} ${sample(BARTENDER_LAST)}`;
+
+// ----- Helpers for Changed Game -------------
+const sanitize = (s = "") =>
+  String(s).replace(/[\r\n\t]/g, " ").trim().slice(0, 50);
+
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+const bucketFor = (pct) => (pct <= 33 ? "low" : pct <= 66 ? "mid" : "high");
 
 // -------- Daily Drink Special (bar side) --------
 const DRINK_KEYS = ["vodka","whiskey","gin","rum","tequila","lightbeer","darkbeer","redwine","espresso","bourbon"];
@@ -1014,6 +1023,43 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
   return res.sendStatus(200);
 });
 
+// ---------- SE HEADLINE ----------
+app.get("/changed", async (req, res) => {
+  const target = sanitize(req.query.target || "@someone");
+  const channel = sanitize(req.query.channel || "default");
+
+  const pct = Math.floor(Math.random() * 101);
+  const bucket = bucketFor(pct);
+
+  const key = `changed:last:${channel}:${target.toLowerCase()}`;
+  await redis.set(
+    key,
+    { pct, bucket, ts: Date.now() },
+    { ex: 30 }
+  );
+
+  res.type("text/plain").send(`${target} has changed ${pct}%… 👀`);
+});
+
+// ---------- NIGHTBOT FOLLOW-UP ----------
+app.get("/changed/followup", async (req, res) => {
+  const target = sanitize(req.query.target || "@someone");
+  const channel = sanitize(req.query.channel || "default");
+
+  await sleep(2000);
+
+  const key = `changed:last:${channel}:${target.toLowerCase()}`;
+  const data = await redis.get(key);
+
+  let bucket = "mid";
+  if (data?.bucket) bucket = data.bucket;
+
+  const quip = pick(CHANGED_QUIPS[bucket]);
+
+  res.type("text/plain").send(`🍸 Bartender: ${quip}`);
+});
+
+export default app;
 
 try {
   await reloadTrialData();
