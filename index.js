@@ -13,6 +13,7 @@ import { fetch as undiciFetch } from "undici";
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { Redis } from "@upstash/redis";
 import { CHANGED_QUIPS } from "./changed-quips.js";
+import cors from 'cors';
 
 // ------- Shared / Economy core -------
 import { deDupeGuard } from "./economy/econ-core.js";
@@ -81,7 +82,7 @@ const fetch = globalThis.fetch || undiciFetch;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const LOVE_DB_FILE = path.join(__dirname, "love-log.json");
-const cors = require('cors');
+
 
 const TOKEN = (process.env.DISCORD_TOKEN || "").trim(); // set in Render env vars
 if (!TOKEN) {
