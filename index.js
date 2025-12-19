@@ -81,6 +81,7 @@ const fetch = globalThis.fetch || undiciFetch;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const LOVE_DB_FILE = path.join(__dirname, "love-log.json");
+const cors = require('cors');
 
 const TOKEN = (process.env.DISCORD_TOKEN || "").trim(); // set in Render env vars
 if (!TOKEN) {
@@ -106,8 +107,12 @@ app.use(express.static("public")); // if you serve /public
 app.use("/factions", factionsRouter);
 // If you do this, update any Wizebot/overlay URLs accordingly.
 app.locals.redis = redis;
+app.use(cors());
 
 registerDrinkRoutes(app);
+
+// ---- daily checkin const ----
+const key = `daily_checkin:${userId}`;
 
 // --- Discord client ---
 const client = new Client({
@@ -142,6 +147,20 @@ client.on("messageCreate", async (msg) => {
       console.error("[handler error]", tag || fn?.name, e);
     }
   };
+
+  try {
+    // INCR is supported by Upstash
+    const newCount = await redis.incr(key);
+
+    res.json({
+      user: userName,
+      count: newCount,
+    });
+  } catch (err) {
+    console.error("Redis error:", err);
+    res.status(500).json({ error: "Failed to update check-in count" });
+  }
+});
 
   // Traveler creation + confirm
   await run(onTravelerMsg,        "traveler");
@@ -714,6 +733,16 @@ app.get("/debug/award", async (req, res) => {
   const result = await seAddPoints(user, amount);
   return res.type("text/plain").send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
 });
+
+// --------- daily checkin -----
+app.get("/daily_checkin", async (req, res) => {
+  const userId = req.query.user_id;
+  const userName = req.query.user_name;
+
+  if (!userId || !userName) {
+    return res.status(400).json({ error: "Missing user_id or user_name" });
+  }
+
 
 // ===================== GRASS ENTREPRENEUR =====================
 
