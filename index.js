@@ -1089,7 +1089,7 @@ app.get("/changed/followup", async (req, res) => {
 
 module.exports = app;
 
-
+// ---------------- Start server ----------------
 (async () => {
   try {
     await reloadTrialData();
@@ -1103,6 +1103,4 @@ module.exports = app;
     console.log('[ENTRY] backend main loaded');
     console.log('[LISTEN]', PORT);
   });
-})(); // <== THIS is the critical closing part
-
-
+})(); // ✅ THIS must be the last line
