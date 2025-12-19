@@ -149,20 +149,17 @@ client.on("messageCreate", async (msg) => {
   };
 
   try {
-    // INCR is supported by Upstash
-    const newCount = await redis.incr(key);
+  const newCount = await redis.incr(key);
 
-    res.json({
-      user: userName,
-      count: newCount,
-    });
+  res.json({
+    user: userName,
+    count: newCount,
+  });
+} catch (err) {
+  console.error("Redis error:", err);
+  res.status(500).json({ error: "Failed to update check-in count" });
 }
-    
-  } catch (err) {
-    console.error("Redis error:", err);
-    res.status(500).json({ error: "Failed to update check-in count" });
-  }
-});
+
 
   // Traveler creation + confirm
   await run(onTravelerMsg,        "traveler");
