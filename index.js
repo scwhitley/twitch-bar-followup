@@ -1087,7 +1087,7 @@ app.get("/changed/followup", async (req, res) => {
   res.type("text/plain").send(`🍸 Bartender: ${quip}`);
 });
 
-export default app;
+
 
 try {
   await reloadTrialData();
@@ -1096,7 +1096,8 @@ try {
   console.warn("[TRIAL] failed to load questions at boot:", err?.message || err);
 }
 
-
+export default app;
+  
 // ---------------- Start server ----------------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
