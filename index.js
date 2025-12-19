@@ -156,6 +156,8 @@ client.on("messageCreate", async (msg) => {
       user: userName,
       count: newCount,
     });
+});
+    
   } catch (err) {
     console.error("Redis error:", err);
     res.status(500).json({ error: "Failed to update check-in count" });
