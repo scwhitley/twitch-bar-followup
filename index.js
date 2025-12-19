@@ -1097,11 +1097,11 @@ app.get("/changed/followup", async (req, res) => {
     console.warn("[TRIAL] failed to load questions at boot:", err?.message || err);
   }
 
-  // Start the server
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
     console.log('[ENTRY] backend main loaded');
     console.log('[LISTEN]', PORT);
   });
-})();
+})(); // <== THIS is the critical closing part
+
 
