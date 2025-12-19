@@ -1087,6 +1087,7 @@ app.get("/changed/followup", async (req, res) => {
   res.type("text/plain").send(`🍸 Bartender: ${quip}`);
 });
 
+module.exports = app;
 
 
 (async () => {
