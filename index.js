@@ -111,8 +111,7 @@ app.use(cors());
 
 registerDrinkRoutes(app);
 
-// ---- daily checkin const ----
-const key = `daily_checkin:${userId}`;
+
 
 // --- Discord client ---
 const client = new Client({
@@ -148,19 +147,7 @@ client.on("messageCreate", async (msg) => {
     }
   };
 
-  try {
-  const newCount = await redis.incr(key);
-
-  res.json({
-    user: userName,
-    count: newCount,
-  });
-} 
-catch (err) {
-  console.error("Redis error:", err);
-  res.status(500).json({ error: "Failed to update check-in count" });
-  }
-});
+  
 
   // Traveler creation + confirm
   await run(onTravelerMsg,        "traveler");
@@ -733,7 +720,6 @@ app.get("/debug/award", async (req, res) => {
   return res.type("text/plain").send(`award test -> ok: ${result.ok}, status: ${result.status}, body: ${result.body}`);
 });
 
-// --------- daily checkin -----
 app.get("/daily_checkin", async (req, res) => {
   const userId = req.query.user_id;
   const userName = req.query.user_name;
@@ -742,6 +728,21 @@ app.get("/daily_checkin", async (req, res) => {
     return res.status(400).json({ error: "Missing user_id or user_name" });
   }
 
+  try {
+    const key = `daily_checkin:${userId}`;
+    const newCount = await redis.incr(key);
+
+    return res.json({
+      user: userName,
+      count: newCount,
+    });
+  } catch (err) {
+    console.error("Redis error:", err);
+    return res.status(500).json({ error: "Failed to update check-in count" });
+  }
+}); // ✅ This is the missing closing brace
+
+    
 
 // ===================== GRASS ENTREPRENEUR =====================
 
