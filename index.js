@@ -1043,7 +1043,7 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
 
       const matchesId = TWITCH_REWARD_ID && rewardId === TWITCH_REWARD_ID;
       const matchesFirst = title === "first"; // Existing reward
-      const matchesCheckIn = title === "daily check-in"; // Replace with your actual reward title if different
+      const matchesCheckIn = title === "daily saber"; // Replace with your actual reward title if different
 
       if ((matchesId || matchesFirst) && login) {
         const result = await seAddPoints(login, 200);
