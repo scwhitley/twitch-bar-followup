@@ -1072,7 +1072,8 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
     console.error("EventSub handler error:", e);
   }
   return res.sendStatus(200);
-}
+  }
+});
 
 
 // ---------- NIGHTBOT FOLLOW-UP ----------
