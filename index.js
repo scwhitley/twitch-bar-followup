@@ -747,7 +747,6 @@ app.get("/daily_checkin", async (req, res) => {
 }); // ✅ This is the missing closing brace
 
 // ----- Hate Commands ----------
-import { HATE_TIERS } from "./hate-quips.js";
 
 // quick helper (keep it simple)
 function sanitizeOneLine(s) {
