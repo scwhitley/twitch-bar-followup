@@ -1010,70 +1010,74 @@ app.get("/grass/reset", (req, res) => {
 
 
 
-// ---------------- Twitch EventSub (webhook) ----------------
 app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (req, res) => {
   const msgId = req.header("twitch-eventsub-message-id");
   const ts = req.header("twitch-eventsub-message-timestamp");
   const sig = req.header("twitch-eventsub-message-signature");
+
   if (!msgId || !ts || !sig) return res.status(400).send("missing headers");
+
   const age = Math.abs(Date.now() - Date.parse(ts));
   if (age > 10 * 60 * 1000) return res.status(403).send("stale");
 
+  const rawBody = req.body; // Buffer
   const hmac = crypto.createHmac("sha256", TWITCH_EVENTSUB_SECRET);
-  hmac.update(msgId + ts + req.body);
+  hmac.update(msgId + ts + rawBody);
   const expected = "sha256=" + hmac.digest("hex");
+
   try {
-    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) return res.status(403).send("bad signature");
-  } catch { return res.status(403).send("bad signature"); }
+    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
+      return res.status(403).send("bad signature");
+    }
+  } catch {
+    return res.status(403).send("bad signature");
+  }
 
   const messageType = req.header("twitch-eventsub-message-type");
-  const payload = JSON.parse(req.body.toString("utf8"));
-  if (messageType === "webhook_callback_verification") return res.status(200).type("text/plain").send(payload.challenge);
-  if (messageType === "revocation") { console.warn("EventSub revoked:", payload?.subscription?.status); return res.sendStatus(200); }
+  const payload = JSON.parse(rawBody.toString("utf8"));
+
+  if (messageType === "webhook_callback_verification") {
+    return res.status(200).type("text/plain").send(payload.challenge);
+  }
+
+  if (messageType === "revocation") {
+    console.warn("EventSub revoked:", payload?.subscription?.status);
+    return res.sendStatus(200);
+  }
+
   if (messageType === "notification") {
-  try {
-    const subType = payload?.subscription?.type;
-    const ev = payload?.event;
+    try {
+      const subType = payload?.subscription?.type;
+      const ev = payload?.event;
 
-    if (subType === "channel.channel_points_custom_reward_redemption.add") {
-      const title = (ev?.reward?.title || "").toLowerCase();
-      const rewardId = ev?.reward?.id || "";
-      const login = ev?.user_login || "";
-      const userId = ev?.user_id || "";
+      if (subType === "channel.channel_points_custom_reward_redemption.add") {
+        const title = (ev?.reward?.title || "").toLowerCase();
+        const login = ev?.user_login || "";
+        const userId = ev?.user_id || "";
 
-      const matchesId = TWITCH_REWARD_ID && rewardId === TWITCH_REWARD_ID;
-      const matchesFirst = title === "first"; // Existing reward
-      const matchesCheckIn = title === "daily saber"; // Replace with your actual reward title if different
+        const matchesCheckIn = title === "daily saber";
 
-      if ((matchesId || matchesFirst) && login) {
-        const result = await seAddPoints(login, 200);
-        logSpecialAward({
-          user: login, drink: "channel-redeem:first", amount: 200,
-          date: dateKeyNY(), time: new Date().toISOString(),
-          awarded: result.ok, status: result.status, body: result.body,
-        });
-      }
-
-      if (matchesCheckIn && login && userId) {
-        try {
-          await axios.get("https://twitch-bar-followup.onrender.com/daily_checkin", {
-            params: {
-              user_name: login,
-              user_id: userId,
-            },
-          });
-          console.log(`✅ Daily check-in recorded for ${login}`);
-        } catch (err) {
-          console.error("❌ Failed to record daily check-in:", err?.message || err);
+        if (matchesCheckIn && login && userId) {
+          try {
+            await axios.get("https://twitch-bar-followup.onrender.com/daily_checkin", {
+              params: { user_name: login, user_id: userId },
+            });
+            console.log(`✅ Daily check-in recorded for ${login}`);
+          } catch (err) {
+            console.error("❌ Failed to record daily check-in:", err?.message || err);
+          }
         }
       }
+    } catch (e) {
+      console.error("EventSub handler error:", e);
     }
-  } catch (e) {
-    console.error("EventSub handler error:", e);
+
+    return res.sendStatus(200);
   }
+
   return res.sendStatus(200);
-  }
 });
+
 
 
 // ---------- NIGHTBOT FOLLOW-UP ----------
