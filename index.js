@@ -1096,7 +1096,8 @@ try {
   console.warn("[TRIAL] failed to load questions at boot:", err?.message || err);
 }
 
-export default app;
+module.exports = app;
+
   
 // ---------------- Start server ----------------
 const PORT = process.env.PORT || 3000;
