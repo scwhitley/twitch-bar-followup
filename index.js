@@ -14,6 +14,7 @@ import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { Redis } from "@upstash/redis";
 import { CHANGED_QUIPS } from "./changed-quips.js";
 import cors from 'cors';
+import { HATE_TIERS } from "./hate-quips.js";
 
 // ------- Shared / Economy core -------
 import { deDupeGuard } from "./economy/econ-core.js";
@@ -745,7 +746,51 @@ app.get("/daily_checkin", async (req, res) => {
   }
 }); // ✅ This is the missing closing brace
 
-    
+// ----- Hate Commands ----------
+import { HATE_TIERS } from "./hate-quips.js";
+
+// quick helper (keep it simple)
+function sanitizeOneLine(s) {
+  return String(s || "")
+    .replace(/[\r\n\t]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+}
+
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+app.get("/hate", (req, res) => {
+  const sender = sanitizeOneLine(req.query.sender || "Someone");
+
+  // optional target support later (safe default now)
+  const rawTarget = req.query.target || req.query.touser || req.query.user || "";
+  const target = sanitizeOneLine(rawTarget);
+
+  const roll = randInt(1, 100);
+
+  const tier =
+    HATE_TIERS.find((t) => roll >= t.min && roll <= t.max) ||
+    HATE_TIERS[0];
+
+  const line = pickRandom(tier.lines);
+
+  res.set("Content-Type", "text/plain; charset=utf-8");
+
+  // If you don't want targets yet, remove the target piece.
+  if (target) {
+    res.send(`Gooooooood! 😈 ${sender} has a hate level of ${roll}% toward ${target}. ${line}`);
+  } else {
+    res.send(`Gooooooood! 😈 ${sender} has a hate level of ${roll}%. ${line}`);
+  }
+});
+
 
 // ===================== GRASS ENTREPRENEUR =====================
 
