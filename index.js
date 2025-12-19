@@ -1031,47 +1031,49 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
   if (messageType === "webhook_callback_verification") return res.status(200).type("text/plain").send(payload.challenge);
   if (messageType === "revocation") { console.warn("EventSub revoked:", payload?.subscription?.status); return res.sendStatus(200); }
   if (messageType === "notification") {
-    try {
-      const subType = payload?.subscription?.type;
-      const ev = payload?.event;
-      if (subType === "channel.channel_points_custom_reward_redemption.add") {
-        const title = (ev?.reward?.title || "").toLowerCase();
-        const rewardId = ev?.reward?.id || "";
-        const login = ev?.user_login || "";
-        const matchesId = TWITCH_REWARD_ID && rewardId === TWITCH_REWARD_ID;
-        const matchesTitle = title === "first";
-        if ((matchesId || matchesTitle) && login) {
-          const result = await seAddPoints(login, 200);
-          logSpecialAward({
-            user: login, drink: "channel-redeem:first", amount: 200,
-            date: dateKeyNY(), time: new Date().toISOString(),
-            awarded: result.ok, status: result.status, body: result.body,
+  try {
+    const subType = payload?.subscription?.type;
+    const ev = payload?.event;
+
+    if (subType === "channel.channel_points_custom_reward_redemption.add") {
+      const title = (ev?.reward?.title || "").toLowerCase();
+      const rewardId = ev?.reward?.id || "";
+      const login = ev?.user_login || "";
+      const userId = ev?.user_id || "";
+
+      const matchesId = TWITCH_REWARD_ID && rewardId === TWITCH_REWARD_ID;
+      const matchesFirst = title === "first"; // Existing reward
+      const matchesCheckIn = title === "daily check-in"; // Replace with your actual reward title if different
+
+      if ((matchesId || matchesFirst) && login) {
+        const result = await seAddPoints(login, 200);
+        logSpecialAward({
+          user: login, drink: "channel-redeem:first", amount: 200,
+          date: dateKeyNY(), time: new Date().toISOString(),
+          awarded: result.ok, status: result.status, body: result.body,
+        });
+      }
+
+      if (matchesCheckIn && login && userId) {
+        try {
+          await axios.get("https://twitch-bar-followup.onrender.com/daily_checkin", {
+            params: {
+              user_name: login,
+              user_id: userId,
+            },
           });
+          console.log(`✅ Daily check-in recorded for ${login}`);
+        } catch (err) {
+          console.error("❌ Failed to record daily check-in:", err?.message || err);
         }
       }
-    } catch (e) { console.error("EventSub handler error:", e); }
-    return res.sendStatus(200);
+    }
+  } catch (e) {
+    console.error("EventSub handler error:", e);
   }
   return res.sendStatus(200);
-});
+}
 
-// ---------- SE HEADLINE ----------
-app.get("/changed", async (req, res) => {
-  const target = sanitize(req.query.target || "@someone");
-  const channel = sanitize(req.query.channel || "default");
-
-  const pct = Math.floor(Math.random() * 101);
-  const bucket = bucketFor(pct);
-
-  const key = `changed:last:${channel}:${target.toLowerCase()}`;
-  await redis.set(
-    key,
-    { pct, bucket, ts: Date.now() },
-    { ex: 30 }
-  );
-
-  res.type("text/plain").send(`${target} has changed ${pct}%… 👀`);
-});
 
 // ---------- NIGHTBOT FOLLOW-UP ----------
 app.get("/changed/followup", async (req, res) => {
