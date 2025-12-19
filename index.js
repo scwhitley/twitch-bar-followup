@@ -1089,20 +1089,19 @@ app.get("/changed/followup", async (req, res) => {
 
 
 
-try {
-  await reloadTrialData();
-  console.log("[TRIAL] questions loaded at boot");
-} catch (err) {
-  console.warn("[TRIAL] failed to load questions at boot:", err?.message || err);
-}
+(async () => {
+  try {
+    await reloadTrialData();
+    console.log("[TRIAL] questions loaded at boot");
+  } catch (err) {
+    console.warn("[TRIAL] failed to load questions at boot:", err?.message || err);
+  }
 
-module.exports = app;
-
-  
-// ---------------- Start server ----------------
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log('[ENTRY] backend main loaded');
-  console.log('[LISTEN]', PORT);
-});
+  // Start the server
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log('[ENTRY] backend main loaded');
+    console.log('[LISTEN]', PORT);
+  });
+})();
 
