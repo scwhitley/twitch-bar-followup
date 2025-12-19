@@ -179,6 +179,8 @@ client.on("messageCreate", async (msg) => {
   // Trials + Forge
   await run(onTrialMsg,      "trial");
   await run(onForgeMsg,      "forge");
+});
+  
 
 client.on("interactionCreate", async (ix) => {
   const runI = async (fn, tag) => {
@@ -1105,4 +1107,3 @@ app.get("/changed/followup", async (req, res) => {
     console.log('[LISTEN]', PORT);
   });
 })(); // ✅ THIS must be the last line
-})();
