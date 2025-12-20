@@ -108,7 +108,10 @@ const SE_CHANNEL_ID = process.env.SE_CHANNEL_ID || "";
 const app = express();
 app.use(express.json());
 app.use(express.static("public")); // if you serve /public
+// Support legacy routes AND the /factions prefix
+app.use("/", factionsRouter);
 app.use("/factions", factionsRouter);
+
 // If you do this, update any Wizebot/overlay URLs accordingly.
 app.locals.redis = redis;
 app.use(cors());
