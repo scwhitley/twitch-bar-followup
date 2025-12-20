@@ -584,6 +584,27 @@ app.get("/love", async (req, res) => {
   );
 });
 
+// ---------- StreamElements: /changed ----------
+app.get("/changed", async (req, res) => {
+  const target = sanitize(req.query.target || "@someone");
+  const channel = sanitize(req.query.channel || "default");
+
+  const pct = Math.floor(Math.random() * 101); // 0..100
+  const bucket = bucketFor(pct);
+
+  // store last result so /changed/followup can grab the matching tier
+  const key = `changed:last:${channel}:${target.toLowerCase()}`;
+  const payload = { pct, bucket, ts: Date.now() };
+
+  // Upstash Redis: store JSON string + TTL (10 minutes)
+  await redis.set(key, JSON.stringify(payload), { ex: 600 });
+
+  res
+    .set("Cache-Control", "no-store")
+    .type("text/plain; charset=utf-8")
+    .send(`${target} has changed ${pct}%.`);
+});
+
 
 // ---------------- FOLLOWUP (drinks) ----------------
 app.get("/followup", async (req, res) => {
@@ -1122,15 +1143,17 @@ app.get("/changed/followup", async (req, res) => {
 
   await sleep(2000);
 
-  const key = `changed:last:${channel}:${target.toLowerCase()}`;
-  const data = await redis.get(key);
+  cconst key = `changed:last:${channel}:${target.toLowerCase()}`;
+const raw = await redis.get(key);
 
-  let bucket = "mid";
+let bucket = "mid";
+try {
+  const data = typeof raw === "string" ? JSON.parse(raw) : raw;
   if (data?.bucket) bucket = data.bucket;
+} catch {}
 
-  const quip = pick(CHANGED_QUIPS[bucket]);
-
-  res.type("text/plain").send(`🍸 Bartender: ${quip}`);
+const quip = pick(CHANGED_QUIPS[bucket]);
+res.type("text/plain").send(`🍸 Bartender: ${quip}`);
 });
 
 
