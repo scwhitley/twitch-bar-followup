@@ -15,6 +15,8 @@ import { Redis } from "@upstash/redis";
 import { CHANGED_QUIPS } from "./changed-quips.js";
 import cors from 'cors';
 import { HATE_TIERS } from "./hate-quips.js";
+import { PUFF_WEEDS, PUFF_QUIPS } from "./puff-quips.js";
+
 
 // ------- Shared / Economy core -------
 import { deDupeGuard } from "./economy/econ-core.js";
@@ -583,6 +585,29 @@ app.get("/love", async (req, res) => {
     console.error("loveRecordRoll failed:", e?.message || e)
   );
 });
+
+// ---------- /puff ----------
+app.get("/puff", (req, res) => {
+  const clean =
+    typeof sanitizeOneLine === "function"
+      ? sanitizeOneLine
+      : (typeof sanitize === "function" ? sanitize : (x) => String(x || "").trim());
+
+  const user = clean(req.query.user || req.query.sender || "Someone");
+
+  const pct = Math.floor(Math.random() * 100) + 1; // 1–100
+
+  const tier = pct <= 33 ? "low" : pct <= 66 ? "mid" : "high";
+
+  const weed = PUFF_WEEDS[Math.floor(Math.random() * PUFF_WEEDS.length)];
+  const quip = PUFF_QUIPS[tier][Math.floor(Math.random() * PUFF_QUIPS[tier].length)];
+
+  res
+    .set("Cache-Control", "no-store")
+    .type("text/plain; charset=utf-8")
+    .send(`${user} has taken a puff of the ${weed} and has been elevated to ${pct}%. ${quip}`);
+});
+
 
 // ---------- StreamElements: /changed ----------
 app.get("/changed", async (req, res) => {
