@@ -1143,7 +1143,7 @@ app.get("/changed/followup", async (req, res) => {
 
   await sleep(2000);
 
-  cconst key = `changed:last:${channel}:${target.toLowerCase()}`;
+const key = `changed:last:${channel}:${target.toLowerCase()}`;
 const raw = await redis.get(key);
 
 let bucket = "mid";
