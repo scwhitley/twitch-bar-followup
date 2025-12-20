@@ -605,6 +605,26 @@ app.get("/changed", async (req, res) => {
     .send(`${target} has changed ${pct}%.`);
 });
 
+// ---------- /kick ----------
+app.get("/kick", (req, res) => {
+  const sender = sanitize(req.query.sender || "Someone");
+  const rawTarget =
+    req.query.target || req.query.touser || req.query.user || "@someone";
+  const target = sanitize(rawTarget);
+
+  const pct = Math.floor(Math.random() * 101); // 0–100
+  const bucket = bucketFor(pct);
+
+  const quip = pick(CHANGED_QUIPS[bucket]);
+
+  res
+    .set("Cache-Control", "no-store")
+    .type("text/plain; charset=utf-8")
+    .send(
+      `🥾 ${sender} kicked ${target}! Kick strength: ${pct}%. ${quip}`
+    );
+});
+
 
 // ---------------- FOLLOWUP (drinks) ----------------
 app.get("/followup", async (req, res) => {
