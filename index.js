@@ -748,15 +748,6 @@ app.get("/daily_checkin", async (req, res) => {
 
 // ----- Hate Commands ----------
 
-// quick helper (keep it simple)
-function sanitizeOneLine(s) {
-  return String(s || "")
-    .replace(/[\r\n\t]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 60);
-}
-
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
