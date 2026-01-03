@@ -68,8 +68,6 @@ const app = express();
 app.use(express.json());
 app.use(express.static("public")); // if you serve /public
 // Support legacy routes AND the /factions prefix
-app.use("/", factionsRouter);
-app.use("/factions", factionsRouter);
 
 // If you do this, update any Wizebot/overlay URLs accordingly.
 app.locals.redis = redis;
@@ -506,28 +504,6 @@ app.get("/love", async (req, res) => {
   loveRecordRoll({ target: who, streamId, pct }).catch((e) =>
     console.error("loveRecordRoll failed:", e?.message || e)
   );
-});
-
-// ---------- /puff ----------
-app.get("/puff", (req, res) => {
-  const clean =
-    typeof sanitizeOneLine === "function"
-      ? sanitizeOneLine
-      : (typeof sanitize === "function" ? sanitize : (x) => String(x || "").trim());
-
-  const user = clean(req.query.user || req.query.sender || "Someone");
-
-  const pct = Math.floor(Math.random() * 100) + 1; // 1–100
-
-  const tier = pct <= 33 ? "low" : pct <= 66 ? "mid" : "high";
-
-  const weed = PUFF_WEEDS[Math.floor(Math.random() * PUFF_WEEDS.length)];
-  const quip = PUFF_QUIPS[tier][Math.floor(Math.random() * PUFF_QUIPS[tier].length)];
-
-  res
-    .set("Cache-Control", "no-store")
-    .type("text/plain; charset=utf-8")
-    .send(`${user} has taken a puff of the ${weed} and has been elevated to ${pct}%. ${quip}`);
 });
 
 
