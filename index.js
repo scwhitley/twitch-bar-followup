@@ -22,17 +22,6 @@ import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { LOVE_TIERS } from "./love-tiers.js";
 
-// --------- Traveler (facade from /traveler) ---------
-import {
-  onTravelerMsg,
-  onTravelerInteraction,
-  onTravelerConfirmMsg,
-  onTravelerConfirmInt,
-  onAbilitiesMsg,
-  onAbilitiesIx,
-  onSkillsMsg,
-  onSkillsIx,
-} from "./traveler/index.js";
 
 
 // ---------- Bar Core ----------
@@ -40,12 +29,6 @@ import { onMessageCreate as onDrinkMsg, registerDrinkRoutes } from "./bar/index.
 
 // ---------- Forge ----------
 import { onMessageCreate as onForgeMsg } from "./forge-command.js";
-
-
-// ---------- Economy Core ----------
-import { onMessageCreate as onBankMsg } from "./economy/bank-commands.js";
-import { onMessageCreate as onInventoryMsg } from "./economy/inventory-commands.js";
-import { onMessageCreate as onAdminEconMsg } from "./economy/admin-commands.js";
 
 
 // --- Sith Trial ---
