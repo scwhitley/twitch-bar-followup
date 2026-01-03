@@ -15,8 +15,6 @@ import { Redis } from "@upstash/redis";
 import { CHANGED_QUIPS } from "./changed-quips.js";
 import cors from 'cors';
 import { HATE_TIERS } from "./hate-quips.js";
-import { PUFF_WEEDS, PUFF_QUIPS } from "./puff-quips.js";
-
 
 // ------- Shared / Economy core -------
 import { deDupeGuard } from "./economy/econ-core.js";
@@ -25,7 +23,6 @@ import { deDupeGuard } from "./economy/econ-core.js";
 import { maleFirst, femaleFirst, neutralFirst, lastNames } from "./names.js";
 import { BARTENDER_FIRST, BARTENDER_LAST } from "./bartender-names.js";
 import { LOVE_TIERS } from "./love-tiers.js";
-import { DUEL_ROASTS, RALLY_LINES, BAR_EVENTS, INVASION_STARTS } from "./faction-text.js";
 
 // --------- Traveler (facade from /traveler) ---------
 import {
@@ -46,35 +43,16 @@ import { onMessageCreate as onDrinkMsg, registerDrinkRoutes } from "./bar/index.
 // ---------- Forge ----------
 import { onMessageCreate as onForgeMsg } from "./forge-command.js";
 
-// ---------- Conditions & Checks ----------
-import { onMessageCreate as onCondsMsg, onInteractionCreate as onCondsIx } from "./conditions-commands.js";
-import { onMessageCreate as onChecksMsg, onInteractionCreate as onChecksIx } from "./checks-command.js";
-
-// --------- Party + Workboard -------
-import { onMessageCreate as onPartyMsg } from "./economy/party-commands.js";
-import {
-  onMessageCreate as onWorkboardMsg,
-  onInteractionCreate as onWorkboardIx
-} from "./economy/workboard.js";
 
 // ---------- Economy Core ----------
 import { onMessageCreate as onBankMsg } from "./economy/bank-commands.js";
 import { onMessageCreate as onInventoryMsg } from "./economy/inventory-commands.js";
 import { onMessageCreate as onAdminEconMsg } from "./economy/admin-commands.js";
 
-// ---------- Vendors ----------
-import { onMessageCreate as onBarMsg } from "./economy/vendor-bar.js"; // Stirred Veil Bar
-
-// ---------- Dice ----------
-import { onMessageCreate as onDiceMsg } from "./economy/dice-commands.js";
 
 // --- Sith Trial ---
 import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trials/trial-command.js";
 
-// --- Faction Folder Imports ---
-import { factionsRouter } from "./factions/index.js";
-
-//
 
 // ---------- Redis / misc ----------
 export const redis = new Redis({
@@ -154,33 +132,6 @@ client.on("messageCreate", async (msg) => {
     }
   };
 
-  
-
-  // Traveler creation + confirm
-  await run(onTravelerMsg,        "traveler");
-  await run(onTravelerConfirmMsg, "traveler-confirm");
-
-  // Party + Workboard
-  await run(onPartyMsg,      "party");
-  await run(onWorkboardMsg,  "workboard");
-
-  // Drinks
-  await run(onDrinkMsg,      "drink");
-  
-  // Economy
-  await run(onBarMsg,        "vendor-bar");
-  await run(onBankMsg,       "bank");
-  await run(onInventoryMsg,  "inventory");
-  await run(onAdminEconMsg,  "admin-econ");
-
-  // Abilities + Skills + Conditions + Checks
-  await run(onAbilitiesMsg,  "abilities");
-  await run(onSkillsMsg,     "skills");
-  await run(onCondsMsg,      "conditions");
-  await run(onChecksMsg,     "checks");
-
-  // Dice
-  await run(onDiceMsg,       "dice");
 
   // Trials + Forge
   await run(onTrialMsg,      "trial");
@@ -200,19 +151,6 @@ client.on("interactionCreate", async (ix) => {
       console.error("[interaction error]", tag || fn?.name, e);
     }
   };
-
-  // Traveler interactions (sheet buttons + confirm button)
-  await runI(onTravelerInteraction,  "traveler-int");
-  await runI(onTravelerConfirmInt,   "traveler-confirm-int");
-
-  // Party + Workboard interactions
-  await runI(onWorkboardIx,         "workboard-int");
-
-  // Abilities + Skills + Conditions + Checks interactions
-  await runI(onAbilitiesIx,         "abilities-int");
-  await runI(onSkillsIx,            "skills-int");
-  await runI(onCondsIx,             "conditions-int");
-  await runI(onChecksIx,            "checks-int");
 
   // Trial interactions
   await runI(onTrialIx,             "trial-int");
