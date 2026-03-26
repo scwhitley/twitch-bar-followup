@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
     "build:pokemon-gen1": "node scripts/build-pokemon-gen1.js"
   },
   "engines": {
