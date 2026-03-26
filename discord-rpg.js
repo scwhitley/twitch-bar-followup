@@ -96,6 +96,7 @@ const gameSession = {
   players: {}
 };
 
+
 function normalizeName(name = "") {
   return String(name).trim().toLowerCase();
 }
@@ -139,10 +140,18 @@ function formatPokemonName(name = "") {
     .join("-");
 }
 
+const RPG_CHANNEL_ID = process.env.RPG_CHANNEL_ID || "";
+
+function isAllowedRpgChannel(msg) {
+  if (!RPG_CHANNEL_ID) return true;
+  return msg.channel?.id === RPG_CHANNEL_ID;
+
+
 export function setupDiscordRpg(client) {
   client.on("messageCreate", async (msg) => {
     if (!msg || msg.author?.bot) return;
     if (!msg.content) return;
+    if (!isAllowedRpgChannel(msg)) return;
 
     const content = msg.content.trim();
     if (!content.startsWith("!")) return;
