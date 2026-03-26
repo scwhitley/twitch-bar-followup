@@ -24,17 +24,6 @@ import { LOVE_TIERS } from "./love-tiers.js";
 
 
 
-// ---------- Bar Core ----------
-import { onMessageCreate as onDrinkMsg, registerDrinkRoutes } from "./bar/index.js";
-
-// ---------- Forge ----------
-import { onMessageCreate as onForgeMsg } from "./forge-command.js";
-
-
-// --- Sith Trial ---
-import { onMessageCreate as onTrialMsg, onInteractionCreate as onTrialIx } from "./trials/trial-command.js";
-
-
 // ---------- Redis / misc ----------
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
@@ -73,7 +62,7 @@ app.use(express.static("public")); // if you serve /public
 app.locals.redis = redis;
 app.use(cors());
 
-registerDrinkRoutes(app);
+
 
 
 
@@ -96,44 +85,7 @@ function seenOnce(key, ttlMs = 30000) {
   setTimeout(() => _seenLocal.delete(key), ttlMs).unref?.();
   return true;
 }
-
-client.on("messageCreate", async (msg) => {
-  if (msg.author?.bot) return;
-
-  const run = async (fn, tag) => {
-    if (!fn) return;
-    try {
-      const ok = await deDupeGuard(`m:${msg.id}:${tag}`, 30);
-      if (!ok) return;
-      await fn(msg);
-    } catch (e) {
-      console.error("[handler error]", tag || fn?.name, e);
-    }
-  };
-
-
-  // Trials + Forge
-  await run(onTrialMsg,      "trial");
-  await run(onForgeMsg,      "forge");
-});
   
-
-client.on("interactionCreate", async (ix) => {
-  const runI = async (fn, tag) => {
-    if (!fn) return;
-    try {
-      const id = ix.id || `${ix.user?.id}:${ix.customId || "unknown"}`;
-      const ok = await deDupeGuard(`i:${id}:${tag}`, 30);
-      if (!ok) return;
-      await fn(ix);
-    } catch (e) {
-      console.error("[interaction error]", tag || fn?.name, e);
-    }
-  };
-
-  // Trial interactions
-  await runI(onTrialIx,             "trial-int");
-});
 
 // One ready log (use once to avoid dupes on hot-reload)
 client.once("ready", () => console.log(`Logged in as ${client.user.tag}`));
@@ -837,13 +789,6 @@ res.type("text/plain").send(`🍸 Bartender: ${quip}`);
 
 // ---------------- Start server ----------------
 (async () => {
-  try {
-    await reloadTrialData();
-    console.log("[TRIAL] questions loaded at boot");
-  } catch (err) {
-    console.warn("[TRIAL] failed to load questions at boot:", err?.message || err);
-  }
-
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
     console.log('[ENTRY] backend main loaded');
