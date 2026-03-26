@@ -15,6 +15,7 @@ import { Redis } from "@upstash/redis";
 import { CHANGED_QUIPS } from "./changed-quips.js";
 import cors from 'cors';
 import { HATE_TIERS } from "./hate-quips.js";
+import { setupDiscordRpg } from "./discord-rpg.js";
 
 
 // ---------- Core / Shared (keep if still used elsewhere) ----------
@@ -89,6 +90,8 @@ function seenOnce(key, ttlMs = 30000) {
 
 // One ready log (use once to avoid dupes on hot-reload)
 client.once("ready", () => console.log(`Logged in as ${client.user.tag}`));
+
+setupDiscordRpg(client);
 
 // ---- NO OTHER messageCreate / interactionCreate listeners below this ----
 
