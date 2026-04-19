@@ -803,6 +803,35 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
   return res.sendStatus(200);
 });
 
+function applyClassModifiers(stats = {}, trainerClass = "") {
+  const safeStats = {
+    command: Number(stats.command || 0),
+    knowledge: Number(stats.knowledge || 0),
+    grit: Number(stats.grit || 0),
+    charm: Number(stats.charm || 0),
+    survival: Number(stats.survival || 0),
+    tech: Number(stats.tech || 0),
+  };
+
+  const modifiers = {
+    "Poké Researcher": { knowledge: 2, tech: 1, grit: -1, command: -1 },
+    "Tactician": { command: 2, knowledge: 1, charm: -1, survival: -1 },
+    "Ace Trainer": { grit: 2, command: 1, knowledge: -1, tech: -1 },
+    "Medic": { charm: 2, survival: 1, command: -1, tech: -1 },
+    "PokéTech Specialist": { tech: 2, knowledge: 1, grit: -1, survival: -1 },
+    "Ranger": { survival: 2, grit: 1, tech: -1, charm: -1 },
+    "Breeder": { charm: 2, command: 1, grit: -1, tech: -1 },
+  };
+
+  const mod = modifiers[trainerClass] || {};
+
+  for (const [key, value] of Object.entries(mod)) {
+    safeStats[key] = (safeStats[key] || 0) + value;
+  }
+
+  return safeStats;
+}
+
 // Pokemon Role Play Backend Route
 app.post("/rpg/profile-sync", async (req, res) => {
   const secret = req.headers["x-rpg-secret"];
