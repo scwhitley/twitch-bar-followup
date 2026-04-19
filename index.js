@@ -137,6 +137,42 @@ async function seAddPoints(username, amount) {
   }
 }
 
+
+// Discord DM Function for Pokemon Role Play
+async function sendCharacterSheetDM(profile) {
+  const user = await client.users.fetch(profile.discordId);
+
+  const msg = `
+🎭 **${profile.identity.characterName}**
+*${profile.identity.title || ""}*
+
+Class: ${profile.identity.class}
+Hometown: ${profile.identity.hometown}
+
+📚 Background:
+${profile.identity.background}
+
+📊 Stats:
+Command: ${profile.trainerStats.command}
+Knowledge: ${profile.trainerStats.knowledge}
+Grit: ${profile.trainerStats.grit}
+Charm: ${profile.trainerStats.charm}
+Survival: ${profile.trainerStats.survival}
+Tech: ${profile.trainerStats.tech}
+
+⚡ Preferences:
+Starter: ${profile.preferences.starterPreference}
+Style: ${profile.preferences.battleStyle}
+
+🧠 Notes:
+${profile.notes.playerNotes || "None"}
+
+Welcome to the Distorted Realm.
+`;
+
+  await user.send(msg);
+}
+
 // quick public ping (no auth) so we can prove we're in the right app
 app.get('/discord/ping', (_req, res) => res.send('pong'));
 
@@ -767,7 +803,56 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
   return res.sendStatus(200);
 });
 
+// Pokemon Role Play Backend Route
+app.post("/rpg/profile-sync", async (req, res) => {
+  const secret = req.headers["x-rpg-secret"];
 
+  if (secret !== "super-secret-key") {
+    return res.status(403).json({ error: "unauthorized" });
+  }
+
+  const data = req.body;
+
+  // 🧠 Apply class modifiers
+  const stats = applyClassModifiers(data.stats, data.class);
+
+  const profile = {
+    discordId: data.discordId,
+    discordName: data.discordName,
+    identity: {
+      characterName: data.characterName,
+      title: data.title,
+      class: data.class,
+      hometown: data.hometown,
+      background: data.background,
+      personality: data.personality.split(",").map(s => s.trim())
+    },
+    trainerStats: stats,
+    preferences: {
+      starterPreference: data.starterPreference,
+      battleStyle: data.battleStyle
+    },
+    progression: {
+      badges: [],
+      rank: "Rookie"
+    },
+    story: {
+      location: data.hometown,
+      activeQuest: null
+    },
+    notes: {
+      playerNotes: data.notes
+    }
+  };
+
+  // 👉 Save it (Redis or memory for now)
+  await redis.set(`trainer:${profile.discordId}`, profile);
+
+  // 👉 Send Discord DM
+  await sendCharacterSheetDM(profile);
+
+  res.json({ ok: true });
+});
 
 // ---------- NIGHTBOT FOLLOW-UP ----------
 app.get("/changed/followup", async (req, res) => {
