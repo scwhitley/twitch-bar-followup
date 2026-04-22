@@ -155,7 +155,7 @@ ${profile.identity.background}
 📊 Stats:
 Command: ${profile.trainerStats.command}
 Knowledge: ${profile.trainerStats.knowledge}
-Grit: ${profile.trainerStats.grit}
+: ${profile.trainerStats.}
 Charm: ${profile.trainerStats.charm}
 Survival: ${profile.trainerStats.survival}
 Tech: ${profile.trainerStats.tech}
@@ -804,7 +804,7 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
 });
 
 function applyClassModifiers(stats = {}, trainerClass = "") {
-  const safeStats = {
+  const baseStats = {
     command: Number(stats.command || 0),
     knowledge: Number(stats.knowledge || 0),
     grit: Number(stats.grit || 0),
@@ -813,14 +813,22 @@ function applyClassModifiers(stats = {}, trainerClass = "") {
     tech: Number(stats.tech || 0),
   };
 
+  const finalStats = { ...baseStats };
+  const classData = TRAINER_CLASS_CONFIG[trainerClass];
+  const modifiers = classData?.modifiers || {};
+
+  for (const [key, value] of Object.entries(modifiers)) {
+    finalStats[key] = (finalStats[key] || 0) + value;
+  }
+
   const modifiers = {
-    "Poké Researcher": { knowledge: 2, tech: 1, grit: -1, command: -1 },
+    "Poké Researcher": { knowledge: 2, tech: 1, : -1, command: -1 },
     "Tactician": { command: 2, knowledge: 1, charm: -1, survival: -1 },
-    "Ace Trainer": { grit: 2, command: 1, knowledge: -1, tech: -1 },
+    "Ace Trainer": { : 2, command: 1, knowledge: -1, tech: -1 },
     "Medic": { charm: 2, survival: 1, command: -1, tech: -1 },
-    "PokéTech Specialist": { tech: 2, knowledge: 1, grit: -1, survival: -1 },
-    "Ranger": { survival: 2, grit: 1, tech: -1, charm: -1 },
-    "Breeder": { charm: 2, command: 1, grit: -1, tech: -1 },
+    "PokéTech Specialist": { tech: 2, knowledge: 1, : -1, survival: -1 },
+    "Ranger": { survival: 2, : 1, tech: -1, charm: -1 },
+    "Breeder": { charm: 2, command: 1, : -1, tech: -1 },
   };
 
   const mod = modifiers[trainerClass] || {};
@@ -831,6 +839,52 @@ function applyClassModifiers(stats = {}, trainerClass = "") {
 
   return safeStats;
 }
+
+// ------- Adding buffs and nerfs to stat shet -------
+const TRAINER_CLASS_CONFIG = {
+  "Poké Researcher": {
+    description: "Focuses on knowledge, data, and understanding Pokémon behavior.",
+    buffs: ["+2 Knowledge", "+1 Tech"],
+    nerfs: ["-1 ", "-1 Command"],
+    modifiers: { knowledge: 2, tech: 1, : -1, command: -1 }
+  },
+  "Tactician": {
+    description: "Excels at battle strategy and reading opponents.",
+    buffs: ["+2 Command", "+1 Knowledge"],
+    nerfs: ["-1 Charm", "-1 Survival"],
+    modifiers: { command: 2, knowledge: 1, charm: -1, survival: -1 }
+  },
+  "Ace Trainer": {
+    description: "A battle-focused trainer who pushes Pokémon to their limits.",
+    buffs: ["+2 ", "+1 Command"],
+    nerfs: ["-1 Knowledge", "-1 Tech"],
+    modifiers: { : 2, command: 1, knowledge: -1, tech: -1 }
+  },
+  "Medic": {
+    description: "Specializes in healing and sustaining Pokémon in tough situations.",
+    buffs: ["+2 Charm", "+1 Survival"],
+    nerfs: ["-1 Command", "-1 Tech"],
+    modifiers: { charm: 2, survival: 1, command: -1, tech: -1 }
+  },
+  "PokéTech Specialist": {
+    description: "Uses technology and gadgets to gain an edge.",
+    buffs: ["+2 Tech", "+1 Knowledge"],
+    nerfs: ["-1 ", "-1 Survival"],
+    modifiers: { tech: 2, knowledge: 1, : -1, survival: -1 }
+  },
+  "Ranger": {
+    description: "Thrives in the wild and excels at tracking and survival.",
+    buffs: ["+2 Survival", "+1 "],
+    nerfs: ["-1 Tech", "-1 Charm"],
+    modifiers: { survival: 2, : 1, tech: -1, charm: -1 }
+  },
+  "Breeder": {
+    description: "Focuses on bonding, growth, and nurturing Pokémon.",
+    buffs: ["+2 Charm", "+1 Command"],
+    nerfs: ["-1 ", "-1 Tech"],
+    modifiers: { charm: 2, command: 1, : -1, tech: -1 }
+  }
+};
 
 // Pokemon Role Play Backend Route
 app.post("/rpg/profile-sync", async (req, res) => {
@@ -843,24 +897,37 @@ app.post("/rpg/profile-sync", async (req, res) => {
   const data = req.body;
 
   // 🧠 Apply class modifiers
-  const stats = applyClassModifiers(data.stats, data.class);
-
+  const { baseStats, finalStats, classData } = applyClassModifiers(data.stats, data.class);
+  
   const profile = {
     discordId: data.discordId,
     discordName: data.discordName,
     identity: {
-      characterName: data.characterName,
-      title: data.title,
-      class: data.class,
-      hometown: data.hometown,
-      background: data.background,
-      personality: data.personality.split(",").map(s => s.trim())
-    },
-    trainerStats: stats,
-    preferences: {
-      starterPreference: data.starterPreference,
-      battleStyle: data.battleStyle
-    },
+    characterName: data.characterName || "",
+    title: data.title || "",
+    class: data.class || "",
+    hometown: data.hometown || "",
+    background: data.background || "",
+    personality: data.personality
+      ? data.personality.split(",").map(s => s.trim()).filter(Boolean)
+      : []
+  },
+    trainerStats: {
+    base: baseStats,
+    final: finalStats
+  },
+
+  classEffects: {
+    description: classData.description,
+    buffs: classData.buffs,
+    nerfs: classData.nerfs
+  },
+
+preferences: {
+    starterPreference: data.starterPreference || "",
+    battleStyle: data.battleStyle || ""
+  },
+    
     progression: {
       badges: [],
       rank: "Rookie"
