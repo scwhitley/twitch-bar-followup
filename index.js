@@ -138,7 +138,7 @@ async function seAddPoints(username, amount) {
 }
 
 
-// Discord DM Function for Pokemon Role Play
+// Discord DM Function for mon Role Play
 async function sendCharacterSheetDM(profile) {
   const user = await client.users.fetch(profile.discordId);
 
@@ -822,11 +822,11 @@ function applyClassModifiers(stats = {}, trainerClass = "") {
   }
 
   const modifiers = {
-    "Poké Researcher": { knowledge: 2, tech: 1, : -1, command: -1 },
+    " Researcher": { knowledge: 2, tech: 1, : -1, command: -1 },
     "Tactician": { command: 2, knowledge: 1, charm: -1, survival: -1 },
     "Ace Trainer": { : 2, command: 1, knowledge: -1, tech: -1 },
     "Medic": { charm: 2, survival: 1, command: -1, tech: -1 },
-    "PokéTech Specialist": { tech: 2, knowledge: 1, : -1, survival: -1 },
+    "Tech Specialist": { tech: 2, knowledge: 1, : -1, survival: -1 },
     "Ranger": { survival: 2, : 1, tech: -1, charm: -1 },
     "Breeder": { charm: 2, command: 1, : -1, tech: -1 },
   };
@@ -888,66 +888,115 @@ const TRAINER_CLASS_CONFIG = {
 
 // Pokemon Role Play Backend Route
 app.post("/rpg/profile-sync", async (req, res) => {
-  const secret = req.headers["x-rpg-secret"];
+  try {
+    const secret = req.headers["x-rpg-secret"];
 
-  if (secret !== "super-secret-key") {
-    return res.status(403).json({ error: "unauthorized" });
-  }
-
-  const data = req.body;
-
-  // 🧠 Apply class modifiers
-  const { baseStats, finalStats, classData } = applyClassModifiers(data.stats, data.class);
-  
-  const profile = {
-    discordId: data.discordId,
-    discordName: data.discordName,
-    identity: {
-    characterName: data.characterName || "",
-    title: data.title || "",
-    class: data.class || "",
-    hometown: data.hometown || "",
-    background: data.background || "",
-    personality: data.personality
-      ? data.personality.split(",").map(s => s.trim()).filter(Boolean)
-      : []
-  },
-    trainerStats: {
-    base: baseStats,
-    final: finalStats
-  },
-
-  classEffects: {
-    description: classData.description,
-    buffs: classData.buffs,
-    nerfs: classData.nerfs
-  },
-
-preferences: {
-    starterPreference: data.starterPreference || "",
-    battleStyle: data.battleStyle || ""
-  },
-    
-    progression: {
-      badges: [],
-      rank: "Rookie"
-    },
-    story: {
-      location: data.hometown,
-      activeQuest: null
-    },
-    notes: {
-      playerNotes: data.notes
+    if (secret !== "super-secret-key") {
+      return res.status(403).json({ error: "unauthorized" });
     }
-  };
 
-  // 👉 Save it (Redis or memory for now)
-  await redis.set(`trainer:${profile.discordId}`, profile);
+    const data = req.body || {};
 
-  // 👉 Send Discord DM
-  await sendCharacterSheetDM(profile);
+    const discordId = String(data.discordId || "").trim();
+    const timestamp = String(data.timestamp || "").trim();
 
-  res.json({ ok: true });
+    if (!discordId) {
+      return res.status(400).json({ error: "missing_discord_id" });
+    }
+
+    // Prevent duplicate sends for the same submission
+    const submissionKey = `rpg:submission:${discordId}:${timestamp || "no-timestamp"}`;
+
+    try {
+      const alreadyProcessed = await redis.get(submissionKey);
+      if (alreadyProcessed) {
+        console.log("[RPG SYNC] duplicate submission ignored:", submissionKey);
+        return res.json({ ok: true, duplicate: true });
+      }
+    } catch (err) {
+      console.error("[RPG SYNC] redis dedupe check failed:", err.message);
+    }
+
+    // Apply class modifiers
+    const { baseStats, finalStats, classData } = applyClassModifiers(
+      data.stats || {},
+      data.class || ""
+    );
+
+    const profile = {
+      discordId,
+      discordName: data.discordName || "",
+
+      identity: {
+        characterName: data.characterName || "",
+        title: data.title || "",
+        class: data.class || "",
+        hometown: data.hometown || "",
+        background: data.background || "",
+        personality: data.personality
+          ? data.personality.split(",").map(s => s.trim()).filter(Boolean)
+          : []
+      },
+
+      trainerStats: {
+        base: baseStats,
+        final: finalStats
+      },
+
+      classEffects: {
+        description: classData?.description || "",
+        buffs: classData?.buffs || [],
+        nerfs: classData?.nerfs || []
+      },
+
+      preferences: {
+        starterPreference: data.starterPreference || "",
+        battleStyle: data.battleStyle || ""
+      },
+
+      progression: {
+        badges: [],
+        rank: "Rookie"
+      },
+
+      story: {
+        location: data.hometown || "Starting Area",
+        activeQuest: null
+      },
+
+      notes: {
+        playerNotes: data.notes || ""
+      },
+
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Save profile
+    try {
+      await redis.set(`trainer:${profile.discordId}`, profile);
+      console.log("[RPG SYNC] profile saved:", profile.discordId);
+    } catch (err) {
+      console.error("[RPG SYNC] redis save failed (continuing):", err.message);
+    }
+
+    // Mark submission as processed
+    try {
+      await redis.set(submissionKey, "1", { ex: 3600 });
+      console.log("[RPG SYNC] submission key saved:", submissionKey);
+    } catch (err) {
+      console.error("[RPG SYNC] redis submission key save failed:", err.message);
+    }
+
+    // Send Discord DM
+    await sendCharacterSheetDM(profile);
+    console.log("[RPG SYNC] DM sent:", profile.discordId);
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[RPG SYNC] error:", err);
+    return res.status(500).json({ error: "sync_failed" });
+  }
 });
 
 // ---------- NIGHTBOT FOLLOW-UP ----------
