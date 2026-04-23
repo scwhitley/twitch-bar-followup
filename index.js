@@ -859,8 +859,8 @@ const TRAINER_CLASS_CONFIG = {
   "Poké Researcher": {
     description: "Focuses on knowledge, data, and understanding Pokémon behavior.",
     buffs: ["+2 Knowledge", "+1 Tech"],
-    nerfs: ["-1 ", "-1 Command"],
-    modifiers: { knowledge: 2, tech: 1, : -1, command: -1 }
+    nerfs: ["-1 Grit", "-1 Command"],
+    modifiers: { knowledge: 2, tech: 1, grit: -1, command: -1 }
   },
   "Tactician": {
     description: "Excels at battle strategy and reading opponents.",
@@ -870,9 +870,9 @@ const TRAINER_CLASS_CONFIG = {
   },
   "Ace Trainer": {
     description: "A battle-focused trainer who pushes Pokémon to their limits.",
-    buffs: ["+2 ", "+1 Command"],
+    buffs: ["+2 Grit", "+1 Command"],
     nerfs: ["-1 Knowledge", "-1 Tech"],
-    modifiers: { : 2, command: 1, knowledge: -1, tech: -1 }
+    modifiers: { grit: 2, command: 1, knowledge: -1, tech: -1 }
   },
   "Medic": {
     description: "Specializes in healing and sustaining Pokémon in tough situations.",
@@ -883,20 +883,20 @@ const TRAINER_CLASS_CONFIG = {
   "PokéTech Specialist": {
     description: "Uses technology and gadgets to gain an edge.",
     buffs: ["+2 Tech", "+1 Knowledge"],
-    nerfs: ["-1 ", "-1 Survival"],
-    modifiers: { tech: 2, knowledge: 1, : -1, survival: -1 }
+    nerfs: ["-1 Grit", "-1 Survival"],
+    modifiers: { tech: 2, knowledge: 1, grit: -1, survival: -1 }
   },
   "Ranger": {
     description: "Thrives in the wild and excels at tracking and survival.",
-    buffs: ["+2 Survival", "+1 "],
+    buffs: ["+2 Survival", "+1 Grit "],
     nerfs: ["-1 Tech", "-1 Charm"],
-    modifiers: { survival: 2, : 1, tech: -1, charm: -1 }
+    modifiers: { survival: 2, grit: 1, tech: -1, charm: -1 }
   },
   "Breeder": {
     description: "Focuses on bonding, growth, and nurturing Pokémon.",
     buffs: ["+2 Charm", "+1 Command"],
-    nerfs: ["-1 ", "-1 Tech"],
-    modifiers: { charm: 2, command: 1, : -1, tech: -1 }
+    nerfs: ["-1 Grit ", "-1 Tech"],
+    modifiers: { charm: 2, command: 1, grit: -1, tech: -1 }
   }
 };
 
