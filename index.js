@@ -815,21 +815,23 @@ function applyClassModifiers(stats = {}, trainerClass = "") {
 
   const finalStats = { ...baseStats };
   const classData = TRAINER_CLASS_CONFIG[trainerClass];
-  const modifiers = classData?.modifiers || {};
+  const modifiers = CLASS_MODIFIERS[trainerClass] || {};
 
   for (const [key, value] of Object.entries(modifiers)) {
     finalStats[key] = (finalStats[key] || 0) + value;
   }
 
-  const modifiers = {
-    " Researcher": { knowledge: 2, tech: 1, : -1, command: -1 },
-    "Tactician": { command: 2, knowledge: 1, charm: -1, survival: -1 },
-    "Ace Trainer": { : 2, command: 1, knowledge: -1, tech: -1 },
-    "Medic": { charm: 2, survival: 1, command: -1, tech: -1 },
-    "Tech Specialist": { tech: 2, knowledge: 1, : -1, survival: -1 },
-    "Ranger": { survival: 2, : 1, tech: -1, charm: -1 },
-    "Breeder": { charm: 2, command: 1, : -1, tech: -1 },
-  };
+  
+
+  const CLASS_MODIFIERS = {
+  "Poké Researcher": { knowledge: 2, tech: 1, grit: -1, command: -1 },
+  "Tactician": { command: 2, knowledge: 1, charm: -1, survival: -1 },
+  "Ace Trainer": { grit: 2, command: 1, knowledge: -1, tech: -1 },
+  "Medic": { charm: 2, survival: 1, command: -1, tech: -1 },
+  "PokéTech Specialist": { tech: 2, knowledge: 1, grit: -1, survival: -1 },
+  "Ranger": { survival: 2, grit: 1, tech: -1, charm: -1 },
+  "Breeder": { charm: 2, command: 1, grit: -1, tech: -1 }
+};
 
   const mod = modifiers[trainerClass] || {};
 
@@ -837,7 +839,19 @@ function applyClassModifiers(stats = {}, trainerClass = "") {
     safeStats[key] = (safeStats[key] || 0) + value;
   }
 
-  return safeStats;
+  return {
+    baseStats,
+    finalStats,
+    classData: {
+      description: "", // optional if you haven't added yet
+      buffs: Object.entries(modifiers)
+        .filter(([_, v]) => v > 0)
+        .map(([k, v]) => `+${v} ${k.charAt(0).toUpperCase() + k.slice(1)}`),
+      nerfs: Object.entries(modifiers)
+        .filter(([_, v]) => v < 0)
+        .map(([k, v]) => `${v} ${k.charAt(0).toUpperCase() + k.slice(1)}`)
+    }
+  };
 }
 
 // ------- Adding buffs and nerfs to stat shet -------
