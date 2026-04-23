@@ -155,7 +155,7 @@ ${profile.identity.background}
 📊 Stats:
 Command: ${profile.trainerStats.command}
 Knowledge: ${profile.trainerStats.knowledge}
-: ${profile.trainerStats.}
+Grit: ${profile.trainerStats.}
 Charm: ${profile.trainerStats.charm}
 Survival: ${profile.trainerStats.survival}
 Tech: ${profile.trainerStats.tech}
