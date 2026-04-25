@@ -868,6 +868,16 @@ app.post("/twitch/eventsub", express.raw({ type: "application/json" }), async (r
   return res.sendStatus(200);
 });
 
+const CLASS_MODIFIERS = {
+  "Poké Researcher": { knowledge: 2, tech: 1, grit: -1, command: -1 },
+  "Tactician": { command: 2, knowledge: 1, charm: -1, survival: -1 },
+  "Ace Trainer": { grit: 2, command: 1, knowledge: -1, tech: -1 },
+  "Medic": { charm: 2, survival: 1, command: -1, tech: -1 },
+  "PokéTech Specialist": { tech: 2, knowledge: 1, grit: -1, survival: -1 },
+  "Ranger": { survival: 2, grit: 1, tech: -1, charm: -1 },
+  "Breeder": { charm: 2, command: 1, grit: -1, tech: -1 }
+};
+
 function applyClassModifiers(stats = {}, trainerClass = "") {
   const baseStats = {
     command: Number(stats.command || 0),
@@ -885,18 +895,6 @@ function applyClassModifiers(stats = {}, trainerClass = "") {
   for (const [key, value] of Object.entries(modifiers)) {
     finalStats[key] = (finalStats[key] || 0) + value;
   }
-
-  
-
-  const CLASS_MODIFIERS = {
-  "Poké Researcher": { knowledge: 2, tech: 1, grit: -1, command: -1 },
-  "Tactician": { command: 2, knowledge: 1, charm: -1, survival: -1 },
-  "Ace Trainer": { grit: 2, command: 1, knowledge: -1, tech: -1 },
-  "Medic": { charm: 2, survival: 1, command: -1, tech: -1 },
-  "PokéTech Specialist": { tech: 2, knowledge: 1, grit: -1, survival: -1 },
-  "Ranger": { survival: 2, grit: 1, tech: -1, charm: -1 },
-  "Breeder": { charm: 2, command: 1, grit: -1, tech: -1 }
-};
 
   const mod = modifiers[trainerClass] || {};
 
